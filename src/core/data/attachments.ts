@@ -429,16 +429,26 @@ const HANDGUARDS: Attachment[] = [
     name: '순교의 화로',
     slot: 'handguard',
     rarity: 'rare',
-    text: '시작 온도 +1.0. 사격을 마칠 때마다 +0.5 누적',
+    text: '모든 탄 HEAT +0.4. 사격을 마칠 때마다 +0.06 누적',
     hooks: {
-      // 런 스코프 누적. 전투가 끝나도 사라지지 않는 이 게임의 주력 온도 스케일러다.
-      // 기본 +1.0 이 없으면 "장착한 순간의 가치 0" 이라 봇도 사람도 집을 이유를 못 찾는다.
-      onCombatStart(c) {
-        c.s.heatStartBase += 1 + getRunVar(c.s, c.self)
+      /**
+       * 런 스코프 누적 — 이 게임의 주력 온도 스케일러.
+       *
+       * ★ 왜 "시작 온도"가 아니라 "발사당 온도"에 누적하는가
+       * 시작 온도로 누적하면 후반에 H0 가 커져 탄창 안의 온도 편차가 상대적으로 작아진다.
+       * damage = Σ dmg_i × (H0 + Σ_{j≤i} g_j) 에서 H0 가 지배하면 어떤 순서로 넣든
+       * 결과가 비슷해진다 = **순서 게임이 후반에 사라진다.**
+       * 실측으로 확인됐다: 시작 온도 누적판에서 최선/최악 배열 비가
+       * S1 2.17x → S8 1.54x 로 단조 감소했다.
+       * 발사당 온도에 누적하면 반대로 후반일수록 탄창 안의 편차가 커져
+       * 순서의 중요도가 유지되거나 오히려 올라간다.
+       */
+      onFire(c) {
+        c.heatGain += 0.4 + getRunVar(c.s, c.self)
+        proc(c)
       },
       onMagEnd(c) {
-        addRunVar(c.s, c.self, 0.5)
-        c.s.heatStartBase += 0.5
+        addRunVar(c.s, c.self, 0.06)
       },
     },
   },
@@ -553,7 +563,10 @@ const OPTICS: Attachment[] = [
     name: '탄도 계산기',
     slot: 'optic',
     rarity: 'uncommon',
-    text: '사격 사이 1회, 배출 행동의 거리 소모 0m',
+    text: '사격 사이 1회 배출 무료. TRAY +2',
+    // 무료 배출은 "행동 예산" 축이라 화력 프로브에 전혀 안 잡힌다(측정 +2.2%).
+    // 같은 정보 축인 트레이로 절반을 옮겨야 자원 빌드의 광학 자리가 성립한다.
+    mods: { tray: 2 },
     hooks: {
       // 배출이 flags['freeEject'] 를 소비(false)하고, 다음 사격이 끝나면 다시 충전된다.
       onCombatStart(c) {
@@ -611,7 +624,7 @@ const OPTICS: Attachment[] = [
     name: '영혼 표식',
     slot: 'optic',
     rarity: 'rare',
-    text: '적 HP 35% 이하 시 HEAT +8, 발동마다 +2 누적 (전투 1회)',
+    text: '적 HP 35% 이하 시 HEAT +8 (발동마다 +2 누적)',
     hooks: {
       // 런 스코프 누적. 표식은 전투가 끝나도 지워지지 않는다 — 광학 축의 복리 장치.
       onCombatStart(c) {

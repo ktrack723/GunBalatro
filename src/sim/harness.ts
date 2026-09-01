@@ -500,7 +500,14 @@ function chooseDoor(
  */
 function rewardScore(run: RunState, item: RewardItem, before: number): number {
   const l = run.loadout
-  if (item.t === 'magazine') return -1
+  if (item.t === 'magazine') {
+    // 보상 탄창도 실제로 물려 보고 판단한다 (기준③ 측정을 위해).
+    const snapM = snapshot(run)
+    applyReward(run, item)
+    const afterM = firepower(run)
+    restore(run, snapM)
+    return afterM > before * 1.15 ? afterM - before : -1
+  }
   if (item.t === 'attachment' && occupant(l, item.attachment) === undefined) return -1
 
   const snap = snapshot(run)
@@ -638,8 +645,10 @@ function purchaseValue(run: RunState, entry: ArmoryEntry, before: number): numbe
   }
   // 응급 보급은 화력이 아니라 행동 수를 산다 — 프로브로 잴 수 없다.
   if (entry.kind === 'heal') return run.loadout.brass > 200 ? 0.02 : -1
-  // 탄창 교체는 빌드 방향 전환이라 봇이 판단하기 어렵다.
-  if (entry.kind === 'magazine') return -1
+  // 탄창 교체도 프로브로 잰다. 안 사면 클리어 런의 탄창이 시작 탄창으로 고정되어
+  // "빌드가 갈리는가"(JUSTIFICATION §5 기준③)를 아예 측정할 수 없다.
+  // 다만 탄창은 덱 구성 전체와 맞물리므로 단발 프로브가 과소평가하기 쉽다 →
+  // 명확히 이득일 때만 사도록 문턱을 둔다.
 
   const snap = snapshot(run)
   const msg = buy(run, entry)
@@ -651,7 +660,10 @@ function purchaseValue(run: RunState, entry: ArmoryEntry, before: number): numbe
   }
   const after = firepower(run)
   restore(run, snap)
-  return (after - before) / paid
+  const value = (after - before) / paid
+  // 탄창은 15% 이상 화력이 오를 때만 바꾼다 (단발 프로브의 과소평가 여지 + 잦은 방향 전환 방지)
+  if (entry.kind === 'magazine' && after < before * 1.15) return -1
+  return value
 }
 
 // ---------------------------------------------------------------------------
