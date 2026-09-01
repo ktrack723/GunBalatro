@@ -305,6 +305,8 @@ export function newRun(seed: number, stake = 1): RunState {
     rngState: s,
     pending: { startDistDelta: 0, heatStartDelta: 0 },
     sectorMods: { heatStartDelta: 0, startDistDelta: 0 },
+    attVars: {},
+    attachmentsTaken: 0,
   }
 
   run.bossPassiveId = rollBossPassive(run)
@@ -529,6 +531,8 @@ function growRails(l: Loadout, delta: number): number {
  * (한 번 열린 레일 칸은 그 부착물을 떼도 닫히지 않는다 — 칸에 든 부착물이 증발하는 것을 막는다)
  */
 function equip(run: RunState, a: Attachment, railIndex?: number): string {
+  // 이번 런에서 획득한 부착물 누적 (성인의 유해가 참조). 교체로 버린 것도 센다.
+  run.attachmentsTaken += 1
   const l = run.loadout
   syncRails(l)
 
@@ -726,11 +730,21 @@ export function armoryStock(run: RunState): ArmoryEntry[] {
     label: '가방에서 탄 1발 제거',
   })
 
-  out.push({
-    kind: 'upgrade',
-    price: shopPrice(PRICES.upgrade, run.stake),
-    label: '탄 1발 등급 +1 (Mk.IV→V 는 ' + PRICES.upgradeToV + ')',
-  })
+  // 일괄 승급: 가방에서 "가장 낮은 등급"인 탄을 전부 +1 한다.
+  //   단일 승급(1발 +1)은 24발 가방의 평균 등급을 0.04 올린다 — 신경 쓰는 비용 대비 리턴이 없어
+  //   파라미터 심사(JUSTIFICATION §3)를 통과하지 못한다. 덱 질(質) 축이 부착물 축과
+  //   경쟁하려면 한 번의 구매가 평균 등급을 실제로 움직여야 한다.
+  {
+    const low = lowestGrade(run.loadout.bag)
+    if (low !== null) {
+      const n = run.loadout.bag.filter((a) => a.grade === low).length
+      out.push({
+        kind: 'upgrade',
+        price: shopPrice(bulkUpgradePrice(low, n), run.stake),
+        label: 'Mk.' + ROMAN_ASCII[low] + ' 탄 ' + n + '발 전부 등급 +1',
+      })
+    }
+  }
 
   const exclude = excludeSet(run)
   for (let i = 0; i < 2; i++) {
@@ -816,6 +830,9 @@ export function consumeCombatMods(run: RunState): CombatMods {
   const mods: CombatMods = {
     startDistDelta: run.pending.startDistDelta + run.sectorMods.startDistDelta,
     heatStartDelta: run.pending.heatStartDelta + run.sectorMods.heatStartDelta,
+    // 참조를 그대로 넘긴다 → 전투 중 누적이 런에 그대로 남는다 (스케일링 조커).
+    runVars: run.attVars,
+    attachmentsTaken: run.attachmentsTaken,
   }
   run.pending = { startDistDelta: 0, heatStartDelta: 0 }
   return mods
@@ -824,6 +841,26 @@ export function consumeCombatMods(run: RunState): CombatMods {
 // ---------------------------------------------------------------------------
 // 구매
 // ---------------------------------------------------------------------------
+
+const ROMAN_ASCII: Record<number, string> = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V' }
+
+/** 가방에서 가장 낮은 등급 (전부 Mk.V 면 null) */
+function lowestGrade(bag: readonly Ammo[]): Grade | null {
+  let low: Grade | null = null
+  for (const a of bag) {
+    if (a.grade >= 5) continue
+    if (low === null || a.grade < low) low = a.grade
+  }
+  return low
+}
+
+/**
+ * 일괄 승급 가격. 대상 등급이 높을수록, 대상 발수가 많을수록 비싸다.
+ * 덱을 압축해 두면 일괄 승급이 싸진다 → 압축과 승급이 서로를 보상한다.
+ */
+function bulkUpgradePrice(grade: Grade, count: number): number {
+  return Math.round((PRICES.upgrade + (grade - 1) * 14) * (0.55 + 0.09 * count))
+}
 
 /** 실제로 지불해야 할 값. 승급만 대상 등급에 따라 다시 계산한다. */
 function realPrice(run: RunState, entry: ArmoryEntry, target: Ammo | null): number {
@@ -883,17 +920,20 @@ export function buy(run: RunState, entry: ArmoryEntry): string {
     }
 
     case 'upgrade': {
-      const t = asTargetPayload(entry.payload)
-      const i = findTarget(run, t.uid, (a) => a.grade < 5)
-      if (i < 0) return '승급할 탄이 없다.'
-      const target = l.bag[i]
-      const price = realPrice(run, entry, target)
+      const low = lowestGrade(l.bag)
+      if (low === null) return '가방의 탄이 전부 Mk.V 다.'
+      const targets = l.bag.filter((a) => a.grade === low).length
+      const price = shopPrice(bulkUpgradePrice(low, targets), run.stake)
       if (l.brass < price) return '탄피가 부족하다.'
       l.brass -= price
-      const before = ammoLabel(target)
-      const up = makeAmmo(target.type, NEXT_GRADE[target.grade], target.uid)
-      l.bag[i] = up
-      return before + ' → ' + ammoLabel(up) + ' 로 승급했다.'
+      let n = 0
+      for (let i = 0; i < l.bag.length; i += 1) {
+        const a = l.bag[i]
+        if (a.grade !== low) continue
+        l.bag[i] = makeAmmo(a.type, NEXT_GRADE[a.grade], a.uid)
+        n += 1
+      }
+      return 'Mk.' + ROMAN_ASCII[low] + ' 탄 ' + n + '발이 Mk.' + ROMAN_ASCII[NEXT_GRADE[low]] + ' 로 승급했다.'
     }
 
     case 'attachment': {

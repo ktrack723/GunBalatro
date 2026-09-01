@@ -12,6 +12,7 @@ import type {
   RewardItem,
   RunState,
   Threat,
+  Magazine,
 } from '../core/types'
 import { NODE_MUL, THREAT_HP_MUL, THREAT_SPEED_ADD } from '../core/types'
 import { makeRng } from '../core/rng'
@@ -34,7 +35,7 @@ import {
   runRng,
 } from '../core/run'
 import type { ArmoryEntry } from '../core/run'
-import { ARCH_BY_ID, baseHp } from '../core/data/enemies'
+import { ARCH_BY_ID, baseHp, makeEnemy } from '../core/data/enemies'
 import { pickDerelict } from '../core/data/events'
 import { estimateMagDamage, playCombat } from './bot'
 import type { BotSkill } from './bot'
@@ -229,33 +230,34 @@ function chooseDoor(run: RunState, doors: readonly DoorOption[], power: number):
 // 보상 선택 — 빈 하드포인트 우선, 그 다음 레어도 교체
 // ---------------------------------------------------------------------------
 
-function rewardScore(run: RunState, item: RewardItem): number {
+/**
+ * 보상 가치 = 실제로 받아본 뒤의 화력 증가분.
+ * 레어도 순위 같은 대리지표를 쓰면 "레어도는 낮지만 내 빌드에 맞는 것"을 영영 못 고른다.
+ */
+function rewardScore(run: RunState, item: RewardItem, before: number): number {
   const l = run.loadout
-  switch (item.t) {
-    case 'attachment': {
-      const a = item.attachment
-      const cur = occupant(l, a)
-      if (cur === undefined) return -1 // 레일 칸이 없다
-      if (cur === null) return 100 + RARITY_RANK[a.rarity] * 10 // 빈 자리 채우기
-      const diff = RARITY_RANK[a.rarity] - RARITY_RANK[cur.rarity]
-      return diff > 0 ? 50 + diff * 10 : -1
-    }
-    case 'ammo': {
-      const avg = averageGrade(l.bag)
-      return item.ammo.grade > avg ? 40 + (item.ammo.grade - avg) * 5 : -1
-    }
-    case 'magazine':
-      return -1
-  }
+  if (item.t === 'magazine') return -1
+  if (item.t === 'attachment' && occupant(l, item.attachment) === undefined) return -1
+
+  const snap = snapshot(run)
+  applyReward(run, item)
+  const after = firepower(run)
+  restore(run, snap)
+
+  const gain = after - before
+  // 빈 하드포인트를 채우는 것은 화력이 같아도 미래 가치가 있다 (교체 여지 확보).
+  const empty = item.t === 'attachment' && occupant(l, item.attachment) === null
+  return gain + (empty ? before * 0.02 : 0)
 }
 
 function takeReward(run: RunState, threat: Threat): void {
   const items = rollRewards(run, threat)
+  const before = firepower(run)
   let best: RewardItem | null = null
   let bestScore = 0
 
   for (const item of items) {
-    const sc = rewardScore(run, item)
+    const sc = rewardScore(run, item, before)
     if (sc > bestScore) {
       bestScore = sc
       best = item
@@ -272,8 +274,124 @@ function takeReward(run: RunState, threat: Threat): void {
   applyReward(run, best)
 }
 
+
 // ---------------------------------------------------------------------------
-// 상점 — 압축 > 레일 > 부착물 > 승급 > 탄 > 회복
+// 화력 프로브 — 봇의 모든 "무엇을 살까/받을까" 판단의 공통 자
+//   하드코딩 우선순위 대신 "이걸 장착하면 탄창 피해가 실제로 얼마나 오르는가"를 잰다.
+//   시뮬레이터가 밸런스의 오라클이므로, 봇의 판단이 편향되면 측정 자체가 못 쓴다.
+// ---------------------------------------------------------------------------
+
+/**
+ * 현재 빌드의 **전투 처리량** = (탄창당 예상 피해) × (쓸 수 있는 사격 행동 수).
+ *
+ * 탄창당 피해만 재면 "거리를 팔아 데미지를 사는" 부착물(참회의 사슬 등)을 체계적으로
+ * 과대평가한다 — 실제로는 행동을 잃어 총 피해가 줄어드는데도 프로브에는 이득으로 보인다.
+ * 시뮬레이터가 밸런스의 오라클이므로 이 편향은 곧 잘못된 밸런싱으로 이어진다.
+ */
+function firepower(run: RunState): number {
+  const sec = Math.max(1, Math.min(8, run.sector))
+  const probe = makeEnemy({
+    archetypeId: 'shambler',
+    passiveId: null,
+    sector: sec,
+    nodeMul: 1.63,
+    threat: 1,
+  })
+  const s = startCombat(run.loadout, probe, makeRng(0x5eed + sec), {
+    startDistDelta: 0,
+    heatStartDelta: 0,
+    // 프로브가 런 스코프 카운터를 오염시키면 안 된다 — 사본을 넘긴다.
+    runVars: { ...run.attVars },
+    attachmentsTaken: run.attachmentsTaken,
+  })
+  const perMag = estimateMagDamage(s, 'greedy')
+  const actions = Math.max(1, Math.floor(s.distance / Math.max(1, s.fireCost)))
+
+  // 필요 이상의 행동은 가치가 없다. 적을 3탄창에 잡는데 10행동이 있어도 7행동은 노는 것이다.
+  // 이 상한이 없으면 "적 이동속도 −2" 같은 자원 부착물이 무한히 좋아 보인다.
+  // 여유 1행동까지만 보험으로 값을 쳐 준다.
+  const need = Math.ceil(probe.maxHp / Math.max(1, perMag))
+  const usable = Math.min(actions, need + 1)
+  return perMag * usable
+}
+
+/** 로드아웃/가방/누적 카운터의 얕은 스냅샷 (프로브용 롤백) */
+interface BuildSnapshot {
+  barrel: Attachment | null
+  handguard: Attachment | null
+  optic: Attachment | null
+  stock: Attachment | null
+  rails: (Attachment | null)[]
+  railSlots: number
+  magazine: Magazine
+  bag: Ammo[]
+  brass: number
+  taken: number
+  removals: number
+}
+
+function snapshot(run: RunState): BuildSnapshot {
+  const l = run.loadout
+  return {
+    barrel: l.barrel,
+    handguard: l.handguard,
+    optic: l.optic,
+    stock: l.stock,
+    rails: l.rails.slice(),
+    railSlots: l.railSlots,
+    magazine: l.magazine,
+    bag: l.bag.slice(),
+    brass: l.brass,
+    taken: run.attachmentsTaken,
+    removals: run.removals,
+  }
+}
+
+function restore(run: RunState, snap: BuildSnapshot): void {
+  const l = run.loadout
+  l.barrel = snap.barrel
+  l.handguard = snap.handguard
+  l.optic = snap.optic
+  l.stock = snap.stock
+  l.rails = snap.rails.slice()
+  l.railSlots = snap.railSlots
+  l.magazine = snap.magazine
+  l.bag = snap.bag.slice()
+  l.brass = snap.brass
+  run.attachmentsTaken = snap.taken
+  run.removals = snap.removals
+}
+
+/** 이 구매가 만들어내는 "탄피 1개당 화력 증가분". 살 가치가 없으면 음수. */
+function purchaseValue(run: RunState, entry: ArmoryEntry, before: number): number {
+  const price = Math.max(1, entry.price)
+  if (price > run.loadout.brass) return -1
+
+  // 레일 확장은 화력이 즉시 오르지 않는다 (다음 부착물을 담을 그릇이다).
+  // 슬롯이 비어 있으면 앞으로 받을 보상 하나가 통째로 이득이 되므로 고정 가치를 준다.
+  if (entry.kind === 'rail') {
+    return run.sector <= 5 ? (before * 0.34) / price : -1
+  }
+  // 응급 보급은 화력이 아니라 행동 수를 산다 — 프로브로 잴 수 없다.
+  if (entry.kind === 'heal') return run.loadout.brass > 200 ? 0.02 : -1
+  // 탄창 교체는 빌드 방향 전환이라 봇이 판단하기 어렵다.
+  if (entry.kind === 'magazine') return -1
+
+  const snap = snapshot(run)
+  const msg = buy(run, entry)
+  const paid = snap.brass - run.loadout.brass
+  if (paid <= 0) {
+    restore(run, snap)
+    void msg
+    return -1
+  }
+  const after = firepower(run)
+  restore(run, snap)
+  return (after - before) / paid
+}
+
+// ---------------------------------------------------------------------------
+// 상점 — 측정 기반. 탄피 1개당 화력 증가분이 가장 큰 것부터 산다.
 // ---------------------------------------------------------------------------
 
 function entryPriority(run: RunState, entry: ArmoryEntry): number {
@@ -327,6 +445,7 @@ function visitShop(run: RunState, kind: 'armory' | 'reliquary'): void {
 
   for (let i = 0; i < MAX_PURCHASES; i += 1) {
     const stock = kind === 'armory' ? armoryStock(run) : reliquaryStock(run)
+    const before = firepower(run)
     let best: ArmoryEntry | null = null
     let bestScore = 0
 
@@ -334,7 +453,7 @@ function visitShop(run: RunState, kind: 'armory' | 'reliquary'): void {
       const key = entry.kind + '/' + entry.label
       if (failed.has(key)) continue
       if (entry.price > run.loadout.brass) continue
-      const sc = entryPriority(run, entry)
+      const sc = purchaseValue(run, entry, before)
       if (sc > bestScore) {
         bestScore = sc
         best = entry
@@ -342,9 +461,9 @@ function visitShop(run: RunState, kind: 'armory' | 'reliquary'): void {
     }
 
     if (best === null) return
-    const before = run.loadout.brass
+    const brassBefore = run.loadout.brass
     buy(run, best)
-    if (run.loadout.brass === before) {
+    if (run.loadout.brass === brassBefore) {
       // 구매가 거절됐다 (가방 하한·레일 없음 등) — 같은 항목을 다시 시도하지 않는다.
       failed.add(best.kind + '/' + best.label)
     }

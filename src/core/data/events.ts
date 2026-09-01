@@ -185,6 +185,7 @@ const CORPSE_PILE: DerelictEvent = {
         const att = pickAttachment(rng, { slot, rarity: 'uncommon', exclude: equippedIds(l) })
         run.pending.startDistDelta -= 8
         if (!att) return '쓸 만한 것은 없었다. 소란만 남았고 무리가 가까워졌다.'
+        run.attachmentsTaken += 1
         return equipAttachment(l, att) + ' 소란에 무리가 8m 가까워졌다.'
       },
     },

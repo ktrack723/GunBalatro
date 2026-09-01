@@ -60,6 +60,22 @@ function getVar(s: CombatState, key: string): number {
   return typeof v === 'number' ? v : 0
 }
 
+/**
+ * ★ 런 스코프 카운터. 전투가 끝나도 살아남아 런 내내 자란다.
+ * 발라트로의 스케일링 조커에 대응하는 이 게임의 유일한 복리 장치다
+ * (곱셈 축을 온도 하나로 줄인 대가를 여기서 갚는다).
+ */
+function getRunVar(s: CombatState, key: string): number {
+  const v = s.runVars[key]
+  return typeof v === 'number' ? v : 0
+}
+
+function addRunVar(s: CombatState, key: string, delta: number): void {
+  // 미리보기는 런 상태를 건드리지 않는다. (클론이 runVars 를 복사하지만 이중 안전장치)
+  if (s.dryRun) return
+  s.runVars[key] = getRunVar(s, key) + delta
+}
+
 /** 플래그 읽기 (미초기화면 false) */
 function getFlag(s: CombatState, key: string): boolean {
   return s.flags[key] === true
@@ -182,22 +198,20 @@ const BARRELS: Attachment[] = [
     name: '폭발 볼트 총열',
     slot: 'barrel',
     rarity: 'rare',
-    text: '고폭탄 발사마다 모든 탄 DMG +25 누적',
+    text: '고폭탄 발사마다 모든 탄 DMG +12 — 런 내내 누적',
     hooks: {
-      onCombatStart(c) {
-        c.s.vars[c.self] = 0
-      },
+      // 런 스코프다. onCombatStart 에서 초기화하지 않는다 — 그게 핵심이다.
       // onFire 가 먼저 읽고 onAfterShot 이 나중에 올린다 →
       // 자기 자신이 이번 발사에 올린 값은 이번 발사에 적용되지 않는다.
       onFire(c) {
-        const v = getVar(c.s, c.self)
+        const v = getRunVar(c.s, c.self)
         if (v <= 0) return
         c.dmg += v
         proc(c)
       },
       onAfterShot(c) {
         if (!isType(c.s, c.ammo, 'HE')) return
-        c.s.vars[c.self] = getVar(c.s, c.self) + 25
+        addRunVar(c.s, c.self, 12)
       },
     },
   },
@@ -415,11 +429,15 @@ const HANDGUARDS: Attachment[] = [
     name: '순교의 화로',
     slot: 'handguard',
     rarity: 'rare',
-    text: '사격을 마칠 때마다 사격 시작 온도 +1.20 누적',
+    text: '사격을 마칠 때마다 시작 온도 +0.45 — 런 내내 누적',
     hooks: {
+      // 런 스코프 누적. 전투가 끝나도 사라지지 않는 이 게임의 주력 온도 스케일러다.
+      onCombatStart(c) {
+        c.s.heatStartBase += getRunVar(c.s, c.self)
+      },
       onMagEnd(c) {
-        if (c.s.dryRun) return
-        c.s.heatStartBase += 1.2
+        addRunVar(c.s, c.self, 0.45)
+        c.s.heatStartBase += 0.45
       },
     },
   },
@@ -578,8 +596,9 @@ const OPTICS: Attachment[] = [
     name: '영혼 표식',
     slot: 'optic',
     rarity: 'rare',
-    text: '적 HP 25% 이하가 되는 순간 HEAT +10 (전투 1회)',
+    text: '적 HP 25% 이하 시 HEAT +6, 발동마다 +2 누적 (전투 1회)',
     hooks: {
+      // 런 스코프 누적. 표식은 전투가 끝나도 지워지지 않는다 — 광학 축의 복리 장치.
       onCombatStart(c) {
         c.s.flags['soulMark'] = false
       },
@@ -588,7 +607,8 @@ const OPTICS: Attachment[] = [
         const e = c.s.enemy
         if (e.hp <= 0 || e.hp > e.maxHp * 0.25) return
         // 이번 발사는 이미 끝났으므로 heatGain 이 아니라 현재 온도를 직접 올린다.
-        c.s.heat += 10
+        c.s.heat += 6 + getRunVar(c.s, c.self)
+        addRunVar(c.s, c.self, 2)
         if (c.s.heat > c.s.peakHeat) c.s.peakHeat = c.s.heat
         c.s.flags['soulMark'] = true
         proc(c)
@@ -642,8 +662,8 @@ const STOCKS: Attachment[] = [
     name: '고정 개머리판',
     slot: 'stock',
     rarity: 'common',
-    text: '전투 시작 거리 +6m',
-    mods: { startDist: 6 },
+    text: '전투 시작 거리 +5m · 사격 거리 소모 −1m',
+    mods: { startDist: 5, fireCost: -1 },
   },
   {
     id: 'st_ammo_pouch',
@@ -972,17 +992,12 @@ const RAILS: Attachment[] = [
     name: '성인의 유해',
     slot: 'rail',
     rarity: 'relic',
-    text: '장착한 부착물 수 ×12 만큼 모든 탄 DMG +',
+    text: '이번 런에서 획득한 부착물 수 ×14 만큼 모든 탄 DMG +',
     hooks: {
+      // 기획서 §6 원안: "이번 런에서 획득한 부착물 수". 교체로 버린 것도 센다.
+      // → 보상방에서 "아무거나 줍기"를 처음으로 정당화하는 부착물.
       onCombatStart(c) {
-        const l = c.s.loadout
-        let n = 0
-        if (l.barrel !== null) n += 1
-        if (l.handguard !== null) n += 1
-        if (l.optic !== null) n += 1
-        if (l.stock !== null) n += 1
-        for (const r of l.rails) if (r !== null) n += 1
-        c.s.vars[c.self] = n * 12
+        c.s.vars[c.self] = getVar(c.s, '__taken') * 14
       },
       onFire(c) {
         const v = getVar(c.s, c.self)

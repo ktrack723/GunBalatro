@@ -238,7 +238,15 @@ export interface CombatState {
   heatDoublePending: boolean
 
   // --- 부착물 누적 저장소 ---
+  /** 전투 스코프. 전투가 끝나면 사라진다 */
   vars: Record<string, number>
+  /**
+   * ★ 런 스코프. RunState.attVars 를 참조로 들고 있어 전투가 끝나도 살아남는다.
+   * 발라트로의 "스케일링 조커"(런 내내 자라는 조커)에 대응하는 유일한 복리 장치다.
+   * 곱셈 축을 온도 하나로 줄인 대가를 여기서 갚는다.
+   * dryRun 클론은 반드시 이 객체를 **복사**해야 한다 (미리보기가 런을 오염시키면 안 된다).
+   */
+  runVars: Record<string, number>
   flags: Record<string, boolean>
 
   // --- 비용 ---
@@ -380,6 +388,10 @@ export interface RunState {
   pending: PendingEffects
   /** 이번 섹터 동안 유지되는 효과 */
   sectorMods: SectorEffects
+  /** 런 내내 누적되는 부착물 카운터 (스케일링 조커) */
+  attVars: Record<string, number>
+  /** 이번 런에서 획득한 부착물 총 개수 (교체로 버린 것 포함) */
+  attachmentsTaken: number
 }
 
 export interface RunStats {
@@ -395,6 +407,10 @@ export interface RunStats {
 export interface CombatMods {
   startDistDelta: number
   heatStartDelta: number
+  /** RunState.attVars 를 그대로 넘긴다 (참조 공유 — 전투 중 누적이 런에 남는다) */
+  runVars?: Record<string, number>
+  /** 이번 런에서 획득한 부착물 수 (성인의 유해 등이 참조) */
+  attachmentsTaken?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -433,8 +449,8 @@ export const BASE_BAG_SIZE = 24
 export const BASE_HEAT = 1.0
 /** HP(sector,node) = HP_BASE * HP_GROWTH^(sector-1) * nodeMul */
 export const HP_BASE = 400
-export const HP_GROWTH = 2.15
-export const HP_ENDLESS_GROWTH = 2.6
+export const HP_GROWTH = 1.95
+export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.63, boss: 2.5 } as const
 
 export const THREAT_HP_MUL: Record<Threat, number> = { 1: 1.0, 2: 1.25, 3: 1.55 }

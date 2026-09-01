@@ -14,7 +14,7 @@ import type {
   Loadout,
   Magazine,
 } from '../types'
-import { HP_BASE, HP_GROWTH, NODE_MUL } from '../types'
+import { HP_BASE, HP_GROWTH, HP_ENDLESS_GROWTH, NODE_MUL } from '../types'
 import { makeRng } from '../rng'
 import { fire, startCombat } from '../combat'
 import { ATT_BY_ID } from '../data/attachments'
@@ -182,11 +182,13 @@ describe('BALANCE.md §7.2 — 중급 빌드', () => {
     expect(r.total).toBe(3948)
   })
 
-  it('섹터 4 소형(3,980)이 약 1탄창, 보스(9,930)가 3탄창', () => {
+  it('중급 빌드가 섹터 4 소형은 1탄창, 보스는 6행동 안에 잡는다', () => {
     const per = shootMag(BUILD, MAG_BY_ID['m1'], plan()).total
-    // 소형 3,975 ÷ 3,948 = 1.007 — 문서의 "≈ 1탄창"과 같은 뜻이다 (아슬아슬하게 넘긴다).
-    expect(baseHp(4, NODE_MUL.small, false) / per).toBeCloseTo(1, 1)
-    expect(Math.ceil(baseHp(4, NODE_MUL.boss, false) / per)).toBe(3)
+    // 절대값이 아니라 "몇 탄창인가"를 잠근다 — HP 곡선은 시뮬레이션으로 튜닝되는 값이다.
+    expect(Math.ceil(baseHp(4, NODE_MUL.small, false) / per)).toBe(1)
+    const bossMags = Math.ceil(baseHp(4, NODE_MUL.boss, false) / per)
+    expect(bossMags).toBeGreaterThanOrEqual(2) // 너무 싱거우면 안 된다
+    expect(bossMags).toBeLessThanOrEqual(4) // 배회자 6행동 안에 들어와야 한다
   })
 })
 
@@ -245,14 +247,18 @@ describe('BALANCE.md §7.3 — 완성 빌드 (이월 온도 8.00 시작)', () =>
     expect(r.chips[3]).toBe(128 + 110)
   })
 
-  // DOC: 212,000 ÷ 44,530 ≈ 4.8탄창 / ACTUAL: 212,358 ÷ 30,272 ≈ 7.02탄창.
-  //   배회자 T1 은 6행동이므로, 구현 기준으로는 이 빌드가 섹터 8 보스를 "겨우 잡는다"가 아니라
-  //   "못 잡는다"가 된다. 문서 §7.3 을 재검산하거나 두 부착물의 판정 시점을 통일해야 한다.
-  it('섹터 8 보스 대비 필요한 탄창 수 (DOC: 4.8 / ACTUAL: 7.02)', () => {
+  /**
+   * 섹터 8 보스가 "완성 빌드로 아슬아슬하게 잡히는" 관계를 잠근다.
+   * HP_GROWTH 를 튜닝하면 절대값은 변하므로 절대값이 아니라 **관계**를 검증한다.
+   * 배회자 T1 은 6행동이므로 필요 탄창 수가 6 이하여야 클리어 가능하고,
+   * 3 미만이면 최종 보스가 너무 싱겁다는 뜻이다.
+   */
+  it('완성 빌드가 섹터 8 보스를 6탄창 이내에 잡되 3탄창 미만은 아니다', () => {
     const per = shootMag(BUILD, MAG_BY_ID['m7'], plan(), 8).total
     const bossHp = baseHp(8, NODE_MUL.boss, false)
-    expect(bossHp).toBe(212358)
-    expect(bossHp / per).toBeCloseTo(7.02, 1)
+    const mags = bossHp / per
+    expect(mags).toBeLessThanOrEqual(6)
+    expect(mags).toBeGreaterThan(3)
   })
 
   it('영혼 표식은 이 검산에서 발동하지 않는다 (문서 표에도 +10 이 없다)', () => {
@@ -275,18 +281,20 @@ describe('BALANCE.md §3 — HP 곡선', () => {
   /** 문서 §3 표 (소형 · T1 기준). 유효숫자 3자리로 반올림되어 있다. */
   const DOC_SMALL = [400, 860, 1850, 3980, 8560, 18400, 39500, 85000]
 
-  it('공식 HP = 400 × 2.15^(s−1) 이 문서 표와 0.5% 이내로 일치한다', () => {
-    for (let s = 1; s <= 8; s += 1) {
-      const actual = baseHp(s, NODE_MUL.small, false)
-      const doc = DOC_SMALL[s - 1]
-      expect(Math.abs(actual - doc) / doc).toBeLessThan(0.005)
-      expect(actual).toBe(Math.round(HP_BASE * Math.pow(HP_GROWTH, s - 1) * NODE_MUL.small))
+  it('공식 HP = HP_BASE × HP_GROWTH^(s−1) × nodeMul 이 상수와 정확히 일치한다', () => {
+    // 문서 표를 하드코딩하지 않는다 — HP 곡선은 시뮬레이션으로 튜닝되는 값이므로
+    // "표와 같은가"가 아니라 "공식대로 계산되는가"를 잠근다.
+    for (let sector = 1; sector <= 8; sector += 1) {
+      for (const mul of [NODE_MUL.small, NODE_MUL.big, NODE_MUL.boss]) {
+        const expected = Math.round(HP_BASE * Math.pow(HP_GROWTH, sector - 1) * mul)
+        expect(baseHp(sector, mul, false)).toBe(expected)
+      }
     }
   })
 
   it('엔드리스 구간(섹터 9+)만 ×2.60 으로 갈아탄다', () => {
     // 반올림을 한 번만 하도록 공식과 직접 대조한다 (중간 반올림을 끼우면 1 이 어긋난다).
-    const expected = Math.round(HP_BASE * Math.pow(HP_GROWTH, 7) * 2.6 * NODE_MUL.small)
+    const expected = Math.round(HP_BASE * Math.pow(HP_GROWTH, 7) * HP_ENDLESS_GROWTH * NODE_MUL.small)
     expect(baseHp(9, NODE_MUL.small, true)).toBe(expected)
     // 엔드리스를 끄면 2.15 곡선이 그대로 이어진다
     expect(baseHp(9, NODE_MUL.small, false)).toBe(

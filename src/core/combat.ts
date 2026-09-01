@@ -177,6 +177,8 @@ export function startCombat(
     heatDoublePending: false,
 
     vars: {},
+
+    runVars: mods?.runVars ?? {},
     flags: {},
 
     fireCost: computeFireCost(loadout, e, speed),
@@ -192,6 +194,8 @@ export function startCombat(
 
   s.heat = s.heatStartBase
   s.vars[K_HEAT_CARRY] = 0
+  // 이번 런에서 획득한 부착물 수 (성인의 유해가 읽는다). 전투 스코프 캐시.
+  s.vars['__taken'] = mods?.attachmentsTaken ?? 0
 
   // 볼터의 원형은 s.bag 을 읽고, 탄약 주머니는 reserve 를 채우고,
   // 기계교 각인은 attachments 를 늘린다 → 가방을 채운 뒤에 훅을 돌린다.
@@ -492,6 +496,8 @@ export function cloneState(s: CombatState): CombatState {
     heatDoublePending: s.heatDoublePending,
 
     vars: { ...s.vars },
+    // 런 스코프 카운터는 반드시 복사한다 — 미리보기가 런 상태를 오염시키면 안 된다.
+    runVars: { ...s.runVars },
     flags: { ...s.flags },
 
     fireCost: s.fireCost,
