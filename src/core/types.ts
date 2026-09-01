@@ -336,6 +336,25 @@ export interface DoorOption {
   label: string
 }
 
+/**
+ * 한시적 효과. 전투 시작 시 consumeCombatMods() 로 소비된다.
+ * WeakMap 이 아니라 RunState 의 필드여야 저장/복원(localStorage)에서 살아남는다.
+ */
+export interface PendingEffects {
+  /** 다음 전투 1회 한정 시작 거리 보정 (m) */
+  startDistDelta: number
+  /** 다음 전투 1회 한정 사격 시작 온도 보정 */
+  heatStartDelta: number
+}
+
+/** 섹터가 바뀔 때까지 유지되는 효과 */
+export interface SectorEffects {
+  /** 이번 섹터 내내 사격 시작 온도 보정 */
+  heatStartDelta: number
+  /** 이번 섹터 내내 전투 시작 거리 보정 (m) */
+  startDistDelta: number
+}
+
 export interface RunState {
   seed: number
   sector: number
@@ -357,6 +376,10 @@ export interface RunState {
   /** 정비소 탄 제거 누적 횟수 (가격 상승) */
   removals: number
   rngState: number
+  /** 다음 전투 1회 한정 효과 */
+  pending: PendingEffects
+  /** 이번 섹터 동안 유지되는 효과 */
+  sectorMods: SectorEffects
 }
 
 export interface RunStats {
@@ -366,6 +389,12 @@ export interface RunStats {
   totalDamage: number
   brassEarned: number
   deaths: number
+}
+
+/** startCombat 에 넘기는 런 레벨 보정 (pending + sectorMods 합산분) */
+export interface CombatMods {
+  startDistDelta: number
+  heatStartDelta: number
 }
 
 // ---------------------------------------------------------------------------
