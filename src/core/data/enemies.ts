@@ -95,23 +95,23 @@ const RIGID: EnemyPassive = {
   },
 }
 
-/** 장갑: 앞부분 축 봉쇄. 매 사격의 첫 2발(index 0,1)이 절반. */
+/** 장갑: 앞부분 축 봉쇄. 매 사격의 첫 2발(index 0,1)이 42%. */
 const PLATED: EnemyPassive = {
   id: 'plated',
   name: '장갑',
-  text: '매 사격의 첫 2발은 데미지가 절반이 된다.',
+  text: '매 사격의 첫 2발은 데미지가 42%가 된다.',
   modifyDamage(damage: number, c: FireCtx): number {
-    return c.index < 2 ? Math.round(damage * 0.5) : damage
+    return c.index < 2 ? Math.round(damage * 0.42) : damage
   },
 }
 
-/** 돌진: 자원(거리) 축 봉쇄. 사격 행동의 거리 소모와 별개로 추가 4m. */
+/** 돌진: 자원(거리) 축 봉쇄. 사격 행동의 거리 소모와 별개로 추가 6m. */
 const LUNGE: EnemyPassive = {
   id: 'lunge',
   name: '돌진',
-  text: '사격 행동이 끝날 때마다 거리가 4m 더 줄어든다.',
+  text: '사격 행동이 끝날 때마다 거리가 6m 더 줄어든다.',
   onMagEnd(c: MagCtx): void {
-    c.s.distance -= 4
+    c.s.distance -= 6
   },
 }
 
@@ -119,21 +119,21 @@ const LUNGE: EnemyPassive = {
 const COLDBLOOD: EnemyPassive = {
   id: 'coldblood',
   name: '냉혈',
-  text: '온도 획득이 40% 줄어든다.',
+  text: '온도 획득이 48% 줄어든다.',
   modifyHeatGain(gain: number): number {
-    return gain * 0.6
+    return gain * 0.52
   },
 }
 
-/** 재생: 시간 축 봉쇄. 사격 사이에 최대 HP 의 4% 회복. */
+/** 재생: 시간 축 봉쇄. 사격 사이에 최대 HP 의 6% 회복. */
 const REGEN: EnemyPassive = {
   id: 'regen',
   name: '재생',
-  text: '사격 사이에 최대 체력의 4%를 회복한다.',
+  text: '사격 사이에 최대 체력의 6%를 회복한다.',
   onMagEnd(c: MagCtx): void {
     const e = c.s.enemy
     if (e.hp <= 0) return
-    const heal = Math.round(e.maxHp * 0.04)
+    const heal = Math.round(e.maxHp * 0.06)
     e.hp = Math.min(e.maxHp, e.hp + heal)
   },
 }
@@ -154,12 +154,12 @@ const PLAGUE: EnemyPassive = {
   },
 }
 
-/** 암흑: 정보 축 봉쇄. 트레이 앞쪽 4장이 뒷면. */
+/** 암흑: 정보 축 봉쇄. 트레이 앞쪽 5장이 뒷면. */
 const BLIND: EnemyPassive = {
   id: 'blind',
   name: '암흑',
-  text: '트레이의 4발이 뒷면으로 가려진다.',
-  hiddenTrayCount: 4,
+  text: '트레이의 5발이 뒷면으로 가려진다.',
+  hiddenTrayCount: 5,
 }
 
 /** 성별 거부: 특정 탄종 축 봉쇄. 축성탄 데미지 0 + 와일드 판정 무효. */
@@ -173,13 +173,13 @@ const ANATHEMA: EnemyPassive = {
   },
 }
 
-/** 열역학: 상한 축 봉쇄. 발사 직후 온도가 20을 넘었으면 그 사격을 끊는다. */
+/** 열역학: 상한 축 봉쇄. 발사 직후 온도가 17을 넘었으면 그 사격을 끊는다. */
 const ENTROPY: EnemyPassive = {
   id: 'entropy',
   name: '열역학',
-  text: '온도가 20을 넘으면 그 사격이 즉시 끝난다.',
+  text: '온도가 17을 넘으면 그 사격이 즉시 끝난다.',
   onAfterShot(c: FireCtx): void {
-    if (c.s.heat > 20) c.s.abortMag = true
+    if (c.s.heat > 17) c.s.abortMag = true
   },
 }
 

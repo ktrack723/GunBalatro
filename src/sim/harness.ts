@@ -5,18 +5,21 @@
 import type {
   Ammo,
   Attachment,
+  CombatState,
   DoorOption,
   EnemyInstance,
   Loadout,
   Rarity,
   RewardItem,
+  Rng,
   RunState,
   Threat,
   Magazine,
 } from '../core/types'
 import { NODE_MUL, THREAT_HP_MUL, THREAT_SPEED_ADD } from '../core/types'
 import { makeRng } from '../core/rng'
-import { startCombat } from '../core/combat'
+import { cloneState, startCombat, previewDamage } from '../core/combat'
+import { ammoStats } from '../core/ammoStats'
 import { computeEnemySpeed, computeFireCost, computeStartDistance } from '../core/pipeline'
 import { combatBrass, distanceLeft, skipRewardBrass } from '../core/economy'
 import {
@@ -35,9 +38,9 @@ import {
   runRng,
 } from '../core/run'
 import type { ArmoryEntry } from '../core/run'
-import { ARCH_BY_ID, baseHp, makeEnemy } from '../core/data/enemies'
+import { ARCH_BY_ID, PASSIVE_BY_ID, baseHp, makeEnemy } from '../core/data/enemies'
 import { pickDerelict } from '../core/data/events'
-import { estimateMagDamage, playCombat } from './bot'
+import { chooseAction, estimateMagDamage, playCombat } from './bot'
 import type { BotSkill } from './bot'
 
 // ---------------------------------------------------------------------------
@@ -56,6 +59,60 @@ export interface RunResult {
   /** 최종 빌드 (부착물 id + "mag:<탄창 id>") */
   finalBuild: string[]
   peakHeat: number
+  /** 이 런에서 마주친 갈림길과 봇의 선택 (JUSTIFICATION §5 "갈림길이 진짜 선택인가") */
+  doorChoices: DoorChoice[]
+  /** 순서 민감도 표본 (JUSTIFICATION §5 "순서가 정말 중요한가") */
+  orderSamples: OrderSample[]
+}
+
+/** 갈림길 1회 — 무엇이 제시됐고 봇이 무엇을 골랐는가 */
+export interface DoorChoice {
+  sector: number
+  nodeIndex: number
+  /** 제시된 두 문의 위험도. 항상 오름차순 — (1,2) 또는 (2,3) */
+  offered: [Threat, Threat]
+  chosen: Threat
+  /** 더 위험한 쪽을 골랐는가 */
+  tookRisk: boolean
+  /** 각 문을 상대로 잰 자기 화력 (탄창 1회 피해). offered 와 같은 순서 */
+  power: [number, number]
+  /** 각 문의 요구 화력. offered 와 같은 순서 */
+  demand: [number, number]
+}
+
+/**
+ * 순서 민감도 표본 1건.
+ * **같은 탄 묶음**의 모든 배열을 previewDamage 로 재서 최선/최악을 찾는다.
+ * best/worst 가 곧 JUSTIFICATION §5 의 "최선 배열 / 최악 배열 데미지 비"다.
+ */
+export interface OrderSample {
+  sector: number
+  /** 이 표본을 뽑은 런의 봇 숙련도 (빌드가 달라지므로 구분해 둔다) */
+  skill: BotSkill
+  /** 묶음 크기 = 실제로 장전한 탄 수 */
+  k: number
+  /** 그때의 탄창 용량 */
+  cap: number
+  best: number
+  worst: number
+  /** greedy 봇이 실제로 택한 배열의 값 (무작위 묶음에는 없다) */
+  greedy: number | null
+  /** 순열을 전수 조사했는가. false 면 표본 추정이라 비율이 과소평가된다 */
+  exhaustive: boolean
+  /** bot = 봇이 고른 묶음 · random = 손패에서 무작위로 집은 묶음 */
+  kind: 'bot' | 'random'
+/**
+   * 최선 배열이 이 한 탄창으로 적을 죽였을 표본인가.
+   * 측정 자체는 죽지 않는 표적으로 하므로(immortalProbe) 편향은 이미 제거돼 있다 —
+   * 이 값은 "실제 전투였다면 여기서 끝났다" 는 참고용 비중이다.
+   */
+  cappedByKill: boolean
+}
+
+/** simulateRun 에 넘기는 계측 옵션 */
+export interface SimOptions {
+  /** 이 런에서 순열 분석 표본을 뽑을지 */
+  orderAnalysis: boolean
 }
 
 export interface Summary {
@@ -79,6 +136,18 @@ const BAG_FAT = 20
 const MAX_NODES = 8 * 5 + 10
 /** 한 상점에서 시도하는 최대 구매 횟수 */
 const MAX_PURCHASES = 8
+
+/** 순열 전수 조사를 허용하는 최대 순열 수 (6! = 720). 그 위는 표본 추정 */
+const ORDER_EXHAUSTIVE_PERMS = 720
+/** 전수 조사가 불가능할 때 무작위로 재보는 배열 수 */
+const ORDER_SAMPLED_PERMS = 240
+/** 한 런에서 순서 표본을 뽑는 섹터당 횟수 (섹터마다 첫 전투 1회) */
+const ORDER_PER_SECTOR = 1
+/**
+ * 순열 분석에 쓰는 런 수 상한. --runs 를 아무리 키워도 이 수만큼의 런에서만 표본을 뽑아
+ * 실행 시간이 선형으로 폭발하지 않게 한다 (스트라이드 추출이라 시드 편향도 없다).
+ */
+const ORDER_RUN_BUDGET = 120
 
 const RARITY_RANK: Record<Rarity, number> = { common: 1, uncommon: 2, rare: 3, relic: 4 }
 
@@ -141,29 +210,194 @@ function averageGrade(bag: readonly Ammo[]): number {
 }
 
 // ---------------------------------------------------------------------------
+// 순서 민감도 계측 — "같은 탄 묶음을 어떻게 배열하느냐"가 만드는 피해 차이
+//
+//   JUSTIFICATION §5 의 첫 번째 성공 기준을 재는 유일한 장치다.
+//   판정은 전부 core 의 previewDamage 로 한다 (규칙을 새로 만들지 않는다).
+//   previewDamage 는 상태를 복제해서 계산하므로 원본 전투/런을 오염시키지 않는다.
+// ---------------------------------------------------------------------------
+
+function dmgOf(a: Ammo): number {
+  return ammoStats(a).dmg
+}
+
+function heatOf(a: Ammo): number {
+  return ammoStats(a).heat
+}
+
+/** 지금 손에 든 탄 = 트레이 + 예비칸 (bot.hand 와 같은 정의) */
+function handOf(s: CombatState): Ammo[] {
+  return s.reserve.length > 0 ? s.tray.concat(s.reserve) : s.tray.slice()
+}
+
+function factorial(n: number): number {
+  let f = 1
+  for (let i = 2; i <= n; i += 1) f *= i
+  return f
+}
+
+/** 모든 순열을 하나씩 넘겨준다 (Heap's algorithm). 배열을 모아두지 않아 메모리가 상수다. */
+function eachPermutation(items: readonly Ammo[], visit: (p: Ammo[]) => void): void {
+  const arr = items.slice()
+  const c = new Array<number>(arr.length).fill(0)
+  visit(arr.slice())
+  let i = 0
+  while (i < arr.length) {
+    if (c[i] < i) {
+      const j = i % 2 === 0 ? 0 : c[i]
+      const tmp = arr[i]
+      arr[i] = arr[j]
+      arr[j] = tmp
+      visit(arr.slice())
+      c[i] += 1
+      i = 0
+    } else {
+      c[i] = 0
+      i += 1
+    }
+  }
+}
+
+/**
+ * 이 묶음이 만들 수 있는 최선/최악 배열의 피해.
+ * 순열이 720개 이하면 전수 조사, 그 위는 앵커 4종 + 무작위 표본으로 근사한다
+ * (근사는 범위를 좁히는 쪽으로만 틀리므로 비율을 과대평가하지 않는다).
+ */
+function orderRange(
+  s: CombatState,
+  set: readonly Ammo[],
+  rng: Rng,
+): { best: number; worst: number; exhaustive: boolean } {
+  let best = Number.NEGATIVE_INFINITY
+  let worst = Number.POSITIVE_INFINITY
+  const see = (p: Ammo[]): void => {
+    const v = previewDamage(s, p).expected
+    if (v > best) best = v
+    if (v < worst) worst = v
+  }
+
+  if (factorial(set.length) <= ORDER_EXHAUSTIVE_PERMS) {
+    eachPermutation(set, see)
+    return { best, worst, exhaustive: true }
+  }
+
+  // 해석적 앵커 — 최선/최악에 가까울 것이 뻔한 네 배열은 반드시 재본다.
+  const byExchange = set.slice().sort((a, b) => heatOf(b) * dmgOf(a) - heatOf(a) * dmgOf(b))
+  see(byExchange)
+  see(byExchange.slice().reverse())
+  see(set.slice().sort((a, b) => dmgOf(a) - dmgOf(b)))
+  see(set.slice().sort((a, b) => dmgOf(b) - dmgOf(a)))
+  for (let i = 0; i < ORDER_SAMPLED_PERMS; i += 1) see(rng.shuffle(set.slice()))
+  return { best, worst, exhaustive: false }
+}
+
+/**
+ * 배열 비교 전용 표적 사본.
+ *
+ * ★ 이 사본이 없으면 측정이 망가진다: combat.fire 는 적이 죽는 순간 남은 탄을 쏘지 않는다.
+ *   좋은 배열일수록 일찍 죽여서 뒷 탄이 잘리므로, **최선값만 깎이고 최악값은 온전히 남는다.**
+ *   실측해 보니 표본의 38% 가 이 절단에 걸렸다 — 비율이 체계적으로 과소평가된다.
+ *   그래서 죽지 않는 표적에 대고 "이 배열이 뽑아내는 피해"만 잰다.
+ *   전투 시작 시점에는 hp == maxHp 라서, 둘을 같이 키우면 HP 비율 조건부 효과
+ *   (예: "적 HP 25% 이하") 의 발동 여부도 원본과 똑같이 유지된다.
+ */
+function immortalProbe(s: CombatState): CombatState {
+  const p = cloneState(s)
+  const hp = 1e12
+  p.enemy = { ...p.enemy, hp, maxHp: hp }
+  return p
+}
+
+/**
+ * 이 전투 시작 시점에서 순서 민감도 표본을 뽑는다.
+ *  ① 봇이 실제로 장전하기로 한 묶음 — "플레이어가 마주하는 진짜 배열 결정"
+ *  ② 손패에서 무작위로 집은 같은 크기의 묶음 — 선택 편향이 없는 대조군
+ * 두 값이 크게 다르면 "좋은 묶음일수록 순서가 더 중요하다"는 뜻이다.
+ *
+ * 묶음을 **고르는** 것은 진짜 상태(s)로 한다(봇이 실제로 하는 판단 그대로).
+ * 묶음을 **배열해 재는** 것만 죽지 않는 표적으로 한다.
+ */
+function sampleOrder(s: CombatState, sector: number, skill: BotSkill): OrderSample[] {
+  const out: OrderSample[] = []
+  const hand = handOf(s)
+  const k = Math.min(s.cap, hand.length)
+  if (k <= 0) return out
+
+  // s.rng 를 소비하면 전투 결과가 바뀐다 — 상태만 읽어 독립 스트림을 판다.
+  const rng = makeRng(s.rng.state()).fork(0x0d1e)
+  const probe = immortalProbe(s)
+
+  const act = chooseAction(s, 'greedy')
+  if (act.kind === 'fire' && act.plan.length > 0) {
+    const r = orderRange(probe, act.plan, rng)
+    out.push({
+      sector,
+      skill,
+      k: act.plan.length,
+      cap: s.cap,
+      best: r.best,
+      worst: r.worst,
+      greedy: previewDamage(probe, act.plan).expected,
+      exhaustive: r.exhaustive,
+      kind: 'bot',
+      cappedByKill: r.best >= s.enemy.hp,
+    })
+  }
+
+  const pick = rng.shuffle(hand.slice()).slice(0, k)
+  const r2 = orderRange(probe, pick, rng)
+  out.push({
+    sector,
+    skill,
+    k: pick.length,
+    cap: s.cap,
+    best: r2.best,
+    worst: r2.worst,
+    greedy: null,
+    exhaustive: r2.exhaustive,
+    kind: 'random',
+    cappedByKill: r2.best >= s.enemy.hp,
+  })
+
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // 문 선택 — "이 빌드로 이 문의 요구 화력을 감당하는가"
 // ---------------------------------------------------------------------------
 
 /**
- * 지금 빌드의 "탄창 1회 피해" 추정치.
+ * **이 문 뒤의 적을 상대로** 낼 수 있는 탄창 1회 피해 추정치.
  * 무한 HP 표적을 상대로 실제 전투를 한 번 차려서 봇에게 최선의 탄창을 짜게 한다
  * (부착물·탄창 효과가 전부 반영된다). 원본 런은 건드리지 않는다 —
  * startCombat 이 가방을 복제하고, rng 는 시드 파생 스트림을 따로 준다.
+ *
+ * ★ 문마다 따로 재는 이유: 위험도 3 문에는 **반드시** 적 패시브가 붙는다(run.rollDoors).
+ *   패시브는 화력을 직접 깎는 축이다(장갑·강직·냉혈·성별 거부). 패시브 없는 프로브 하나로
+ *   두 문을 같이 재면 위험도 3 의 난이도만 체계적으로 과소평가하게 되고,
+ *   그 편향은 그대로 "봇이 늘 위험한 문만 고른다"는 계측 결과로 나타난다.
+ *   런 스코프 카운터(attVars)와 획득 부착물 수도 넘겨야 누적형 부착물이 제값으로 잡힌다.
  */
-function estimatePower(run: RunState, skill: BotSkill, salt: number): number {
-  const arch = ARCH_BY_ID.shambler
+function powerAgainst(run: RunState, door: DoorOption, skill: BotSkill, salt: number): number {
+  const arch = ARCH_BY_ID[door.archetype ?? 'shambler']
   const probe: EnemyInstance = {
     archetype: arch,
-    passive: null,
+    passive: door.passiveId === null ? null : (PASSIVE_BY_ID[door.passiveId] ?? null),
     maxHp: 1e12,
     hp: 1e12,
-    speed: arch.speed,
+    speed: arch.speed + THREAT_SPEED_ADD[door.threat],
     startDist: arch.startDist,
     label: '연습 표적',
     bodyCount: 1,
   }
   const rng = makeRng(run.seed).fork((run.sector * 977 + run.nodeIndex * 31 + salt) | 0)
-  const s = startCombat(run.loadout, probe, rng)
+  const s = startCombat(run.loadout, probe, rng, {
+    startDistDelta: 0,
+    heatStartDelta: 0,
+    // 프로브가 런 스코프 카운터를 오염시키면 안 된다 — 사본을 넘긴다.
+    runVars: { ...run.attVars },
+    attachmentsTaken: run.attachmentsTaken,
+  })
   return estimateMagDamage(s, skill)
 }
 
@@ -205,25 +439,55 @@ function doorDemand(run: RunState, door: DoorOption): number {
 /**
  * 문 선택 휴리스틱: 감당 가능한 문 중 가장 위험한 문을 고른다 (보상이 크므로).
  * 어느 쪽도 감당이 안 되면 가장 안전한 문으로 도망친다.
+ *
+ * "감당 가능"의 기준은 `그 문을 상대로 잰 화력 >= 그 문의 요구화력 × DOOR_SAFETY` 하나다.
+ * 화력을 문마다 따로 재기 때문에(powerAgainst) 적 패시브·접근 속도가 판정에 들어간다.
  */
-function chooseDoor(run: RunState, doors: readonly DoorOption[], power: number): number {
+function chooseDoor(
+  run: RunState,
+  doors: readonly DoorOption[],
+  skill: BotSkill,
+  salt: number,
+): { index: number; record: DoorChoice } {
   let bestIdx = 0
   let bestThreat = -1
   let safestIdx = 0
   let safestThreat = 99
+  const demands: number[] = []
+  const powers: number[] = []
 
   for (let i = 0; i < doors.length; i += 1) {
     const d = doors[i]
+    const demand = doorDemand(run, d)
+    const power = powerAgainst(run, d, skill, salt * 7 + i)
+    demands.push(demand)
+    powers.push(power)
     if (d.threat < safestThreat) {
       safestThreat = d.threat
       safestIdx = i
     }
-    if (power >= doorDemand(run, d) * DOOR_SAFETY && d.threat > bestThreat) {
+    if (power >= demand * DOOR_SAFETY && d.threat > bestThreat) {
       bestThreat = d.threat
       bestIdx = i
     }
   }
-  return bestThreat >= 0 ? bestIdx : safestIdx
+
+  const index = bestThreat >= 0 ? bestIdx : safestIdx
+
+  // 계측용 기록 — 위험도 오름차순으로 정규화해서 담는다 (표에서 (1,2)/(2,3) 로 묶기 위함).
+  const order = doors.map((_, i) => i).sort((a, b) => doors[a].threat - doors[b].threat)
+  const lo = order[0]
+  const hi = order[order.length - 1]
+  const record: DoorChoice = {
+    sector: run.sector,
+    nodeIndex: run.nodeIndex,
+    offered: [doors[lo].threat, doors[hi].threat],
+    chosen: doors[index].threat,
+    tookRisk: doors[index].threat === doors[hi].threat && lo !== hi,
+    power: [powers[lo], powers[hi]],
+    demand: [demands[lo], demands[hi]],
+  }
+  return { index, record }
 }
 
 // ---------------------------------------------------------------------------
@@ -491,6 +755,8 @@ function runCombat(
   enemy: EnemyInstance,
   threat: Threat,
   skill: BotSkill,
+  /** null 이 아니면 이 전투 시작 시점의 순서 민감도 표본을 여기에 담는다 */
+  orderSink: OrderSample[] | null,
 ): { win: boolean; peakHeat: number } {
   // 정비소 "회복"/이벤트의 한시 효과는 여기서 정확히 한 번 소비된다.
   const mods = consumeCombatMods(run)
@@ -501,6 +767,13 @@ function runCombat(
 
   const rng = makeRng(run.rngState).fork(run.sector * 733 + run.nodeIndex * 17 + 3)
   const s = startCombat(run.loadout, staged, rng, mods)
+
+  // 순열 분석은 반드시 첫 사격 **전에** 한다 — 트레이가 가장 넓고, 온도가 시작값이라
+  // 표본끼리 비교 가능한 시점이기 때문이다. previewDamage 는 s 를 건드리지 않는다.
+  if (orderSink !== null) {
+    for (const sample of sampleOrder(s, run.sector, skill)) orderSink.push(sample)
+  }
+
   const res = playCombat(s, skill)
 
   run.stats.shotsFired += s.shotsFired
@@ -529,13 +802,22 @@ function buildOf(run: RunState): string[] {
   return out
 }
 
-export function simulateRun(seed: number, skill: BotSkill, stake: number): RunResult {
+export function simulateRun(
+  seed: number,
+  skill: BotSkill,
+  stake: number,
+  opt: SimOptions = { orderAnalysis: false },
+): RunResult {
   // newRun 이 resetUidCounter() 를 부르므로 같은 시드는 항상 같은 런이 된다.
   const run = newRun(seed, stake)
   const seenDerelicts = new Set<string>()
 
   let deathNode: string | null = null
   let peakHeat = 0
+  const doorChoices: DoorChoice[] = []
+  const orderSamples: OrderSample[] = []
+  // 섹터당 몇 번 표본을 뽑았는지 — 후반 섹터가 표본을 독식하지 않게 한다.
+  const orderTaken = new Map<number, number>()
 
   for (let step = 0; step < MAX_NODES && run.status === 'alive'; step += 1) {
     const node = currentNode(run)
@@ -544,7 +826,9 @@ export function simulateRun(seed: number, skill: BotSkill, stake: number): RunRe
       let doorIndex = 0
       if (node === 'combat') {
         const doors = rollDoors(run)
-        doorIndex = chooseDoor(run, doors, estimatePower(run, skill, step))
+        const pick = chooseDoor(run, doors, skill, step)
+        doorIndex = pick.index
+        doorChoices.push(pick.record)
       }
 
       const entered = enterDoor(run, doorIndex)
@@ -553,7 +837,17 @@ export function simulateRun(seed: number, skill: BotSkill, stake: number): RunRe
         continue
       }
 
-      const res = runCombat(run, entered.enemy, entered.threat, skill)
+      const takenHere = orderTaken.get(run.sector) ?? 0
+      const wantOrder = opt.orderAnalysis && takenHere < ORDER_PER_SECTOR
+      if (wantOrder) orderTaken.set(run.sector, takenHere + 1)
+
+      const res = runCombat(
+        run,
+        entered.enemy,
+        entered.threat,
+        skill,
+        wantOrder ? orderSamples : null,
+      )
       if (res.peakHeat > peakHeat) peakHeat = res.peakHeat
 
       if (!res.win) {
@@ -584,6 +878,8 @@ export function simulateRun(seed: number, skill: BotSkill, stake: number): RunRe
     deathNode,
     finalBuild: buildOf(run),
     peakHeat,
+    doorChoices,
+    orderSamples,
   }
 }
 
@@ -596,10 +892,15 @@ export function simulateMany(
   skill: BotSkill,
   stake: number,
   seedBase = 1,
+  orderAnalysis = false,
 ): { results: RunResult[]; summary: Summary } {
   const results: RunResult[] = []
+  // --runs 가 커져도 순열 분석 비용은 상수로 묶는다. 앞쪽 런만 쓰면 시드 편향이 생기므로
+  // 전 구간에 균등하게 흩뿌리는 스트라이드 추출을 쓴다.
+  const stride = orderAnalysis ? Math.max(1, Math.ceil(n / ORDER_RUN_BUDGET)) : 0
   for (let i = 0; i < n; i += 1) {
-    results.push(simulateRun(seedBase + i, skill, stake))
+    const sampleThis = orderAnalysis && i % stride === 0
+    results.push(simulateRun(seedBase + i, skill, stake, { orderAnalysis: sampleThis }))
   }
   return { results, summary: summarize(results) }
 }

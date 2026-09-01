@@ -316,8 +316,8 @@ export class GunRig {
     this.fx.heatDistortion(THREE.MathUtils.clamp((this.heatShown - 8) / 22, 0, 1))
 
     // --- 자세 (전투 / 이동) ---
-    const targetRx = this.lowered ? 0.30 : 0
-    const targetY = this.lowered ? -0.075 : 0
+    const targetRx = this.lowered ? 0.55 : 0
+    const targetY = this.lowered ? -0.16 : 0
     this.sway.rotation.x += (targetRx - this.sway.rotation.x) * Math.min(1, d * 5)
     this.sway.position.y += (targetY - this.sway.position.y) * Math.min(1, d * 5)
 

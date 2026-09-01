@@ -281,7 +281,11 @@ html, body {
 .card.hidden-card .card-type, .card.hidden-card .card-grade, .card.hidden-card .card-dmg { visibility: hidden; }
 .card.hidden-card::after { content: '?'; position: absolute; font-size: 20px; color: var(--text-faint); }
 .card-type { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--c, var(--ap)); }
-.card-grade { font-size: 17px; font-weight: 800; line-height: 1; color: var(--text); }
+.card-grade {
+  font-family: var(--font-num);
+  font-size: 16px; font-weight: 800; line-height: 1; color: var(--text);
+  letter-spacing: .06em;   /* I / II / III 를 한눈에 구분 */
+}
 .card-dmg {
   font-family: var(--font-num); font-size: 9px; color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -425,15 +429,25 @@ html, body {
   display: flex; flex-direction: column; gap: 8px;
 }
 
-/* 화면 플래시 (연출) */
+/* 화면 플래시 (연출)
+   --fx-bottom/--fx-right 로 3D 뷰포트 영역에만 걸린다. App.syncInsets() 가 실측해 넣는다.
+   조작부까지 덮으면 발사마다 트레이가 하얗게 날아가고 광과민성 위험도 커진다. */
 #flash {
-  position: absolute; inset: 0; z-index: 15; pointer-events: none;
+  position: absolute;
+  top: 0; left: 0;
+  right: var(--fx-right, 0px);
+  bottom: var(--fx-bottom, 0px);
+  z-index: 15; pointer-events: none;
   background: #fff; opacity: 0; mix-blend-mode: screen;
 }
 
 /* 온도 비네트 */
 #heat-vignette {
-  position: absolute; inset: 0; z-index: 14; pointer-events: none; opacity: 0;
+  position: absolute;
+  top: 0; left: 0;
+  right: var(--fx-right, 0px);
+  bottom: var(--fx-bottom, 0px);
+  z-index: 14; pointer-events: none; opacity: 0;
   background: radial-gradient(ellipse at center, transparent 42%, rgba(255,110,20,.42) 100%);
   transition: opacity .3s;
 }
@@ -466,5 +480,5 @@ html, body {
 /* 작은 화면 (iPhone SE) */
 @media (max-height: 680px) {
   :root { --h-tray: 128px; --h-mag: 58px; --h-heat: 30px; }
-  .card-grade { font-size: 15px; }
+  .card-grade { font-size: 14px; }
 }

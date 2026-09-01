@@ -29,7 +29,12 @@ const TYPE_COLOR: Record<AmmoType, string> = {
 }
 
 /** 카드 위 등급 표기 (유니코드 로마숫자 — 좁은 카드용) */
-const GRADE_ROMAN: Record<Grade, string> = { 1: 'Ⅰ', 2: 'Ⅱ', 3: 'Ⅲ', 4: 'Ⅳ', 5: 'Ⅴ' }
+/**
+ * 좁은 카드용 등급 표기.
+ * 유니코드 로마숫자(U+2160 Ⅰ Ⅱ Ⅲ)는 폰에서 얇은 막대로 렌더돼
+ * Ⅰ 과 Ⅱ 가 한눈에 구분되지 않았다(실기 캡처로 확인). ASCII 로 그린다.
+ */
+const GRADE_ROMAN: Record<Grade, string> = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V' }
 
 /** 문장용 등급 표기 (GDD §5.2 의 Mk.I~Mk.V 표기) */
 const GRADE_MARK: Record<Grade, string> = {

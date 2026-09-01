@@ -267,8 +267,14 @@ export class EnemyRig {
       }
     }
 
-    // 머티리얼: 기본 림(멀리서도 실루엣이 읽히게) + 피격 백색 + 사망 적색
-    const rim = 0.045 + 0.10 * (1 - this.nearness)
+    // 머티리얼: 기본 림 + 피격 백색 + 사망 적색.
+    //
+    // 림은 "멀리서도 실루엣이 읽히게"가 아니라 **거리를 읽게** 하는 정보 채널이다.
+    // 이 게임에서 거리는 목숨이자 남은 행동 수이므로, 적이 어디쯤 있는지가
+    // 손전등 원뿔 밖에서도 항상 보여야 한다. 실기 캡처에서 30m 의 적이
+    // 거의 보이지 않아 위협이 전혀 읽히지 않았다 → 먼 거리일수록 림을 크게 준다.
+    // (가까울수록 손전등이 직접 비추므로 림은 줄여도 된다.)
+    const rim = 0.10 + 0.62 * (1 - this.nearness)
     if (dieP > 0) {
       const burst = Math.max(0, 1 - dieP / 0.22)
       this.mat.emissive.setRGB(1, 0.12 * burst + 0.02, 0.06 * burst)
@@ -278,7 +284,10 @@ export class EnemyRig {
       this.mat.emissive.setRGB(1, 1, 1)
       this.mat.emissiveIntensity = rim + flash * 1.8
     } else {
-      this.mat.emissive.setRGB(0.10, 0.125, 0.095)
+      // 먼 거리에서는 손전등이 닿지 않으므로 emissive 만으로 실루엣을 세운다.
+      // 색이 거의 검정(0.10)이면 intensity 를 올려도 결과가 어둡다 → 색 자체를 멀수록 밝게.
+      const far = 1 - this.nearness
+      this.mat.emissive.setRGB(0.10 + 0.30 * far, 0.125 + 0.34 * far, 0.095 + 0.26 * far)
       this.mat.emissiveIntensity = rim
     }
 

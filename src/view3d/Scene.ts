@@ -55,10 +55,12 @@ export class GameScene {
     this.root.add(this.camera)
 
     // --- 조명 (동적 2개 예산: 손전등 + Fx 머즐) ---
-    this.ambient = new THREE.AmbientLight(0x2b3340, 0.34)
+    // 앰비언트는 '어둠이 예산'이라는 원칙을 지키되, 복도 형태가 아예 안 읽히면
+    // 이동 구간이 검은 화면이 된다. 실기 캡처 기준으로 최소치를 올렸다.
+    this.ambient = new THREE.AmbientLight(0x2b3340, 0.62)
     this.root.add(this.ambient)
 
-    this.flashlight = new THREE.SpotLight(0xffe7c6, 18, 22, THREE.MathUtils.degToRad(38), 0.72, 1.7)
+    this.flashlight = new THREE.SpotLight(0xffe7c6, 34, 30, THREE.MathUtils.degToRad(38), 0.72, 1.55)
     this.flashlight.castShadow = false
     this.flashlight.position.set(0.06, -0.10, 0)
     this.flashlight.target.position.set(0, -0.02, -6)

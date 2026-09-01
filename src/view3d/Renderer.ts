@@ -17,9 +17,13 @@ interface QualityPreset {
 }
 
 const PRESETS: Record<Quality, QualityPreset> = {
+  // halfFloat 는 전 품질에서 켠다. 8bit 선형 RT 는 이 정도로 어두운 씬에서
+  // 밴딩이 '벽에 붙은 얼룩'처럼 크게 드러나고(포스트의 1/255 디더로는 못 가린다),
+  // three 는 렌더타깃 출력을 항상 선형으로 인코딩하므로 sRGB 저장으로 피할 수도 없다.
+  // 강등 시 DPR 이 함께 내려가므로 대역폭은 high(=DPR2·16F) 기준보다 항상 작다.
   high: { dprCap: 2.0, particles: 256, distortion: true, halfFloat: true, samples: 0 },
-  mid: { dprCap: 1.5, particles: 96, distortion: true, halfFloat: false, samples: 0 },
-  low: { dprCap: 1.25, particles: 0, distortion: false, halfFloat: false, samples: 0 },
+  mid: { dprCap: 1.5, particles: 96, distortion: true, halfFloat: true, samples: 0 },
+  low: { dprCap: 1.25, particles: 0, distortion: false, halfFloat: true, samples: 0 },
 }
 
 export class GameRenderer {
@@ -36,6 +40,9 @@ export class GameRenderer {
   private frames = 0
   private acc = 0
   private autoDone = false
+  // 씬 렌더 직후의 계측 (포스트 쿼드가 info 를 덮어쓰기 전 값)
+  private lastCalls = 0
+  private lastTris = 0
 
   private readonly onLost: (e: Event) => void
   private readonly onRestored: () => void
@@ -119,10 +126,13 @@ export class GameRenderer {
     return this.lost
   }
 
-  /** 개발 오버레이용 계측 (TECH.md §7) */
+  /**
+   * 개발 오버레이용 계측 (TECH.md §7).
+   * renderer.info 는 render() 마다 초기화되므로 '씬 렌더 직후' 값을 따로 붙잡아 둔다
+   * (그러지 않으면 포스트 쿼드 1드로우콜만 보인다).
+   */
   get stats(): { calls: number; triangles: number; dpr: number; quality: Quality } {
-    const r = this.renderer.info.render
-    return { calls: r.calls, triangles: r.triangles, dpr: this.dpr, quality: this.q }
+    return { calls: this.lastCalls, triangles: this.lastTris, dpr: this.dpr, quality: this.q }
   }
 
   setQuality(q: Quality): void {
@@ -179,6 +189,8 @@ export class GameRenderer {
     this.scene.update(d)
     this.renderer.setRenderTarget(this.rt)
     this.renderer.render(this.scene.root, this.scene.camera) // autoClear 가 RT 를 지운다
+    this.lastCalls = this.renderer.info.render.calls
+    this.lastTris = this.renderer.info.render.triangles
     this.scene.fx.post.render(this.renderer, this.rt.texture)
   }
 

@@ -240,11 +240,19 @@ export class CombatView {
     this.wide = wide
     const rows = [this.distRow, this.heatRow, this.magRow, this.trayRow, this.actRow]
     if (wide) {
-      for (const r of rows) this.side.appendChild(r)
+      for (const r of rows) {
+        // style.css 의 'align-self:start' 는 .combat-root 가 그리드일 때(블록축)를 가정한 값이다.
+        // .side 는 세로 flex 라 같은 값이 '가로로 안 늘어남'이 되어 게이지·버튼이 잘린다.
+        r.style.alignSelf = 'stretch'
+        this.side.appendChild(r)
+      }
       this.root.insertBefore(this.side, this.overlay)
     } else {
       this.side.remove()
-      for (const r of rows) this.root.insertBefore(r, this.overlay)
+      for (const r of rows) {
+        r.style.alignSelf = ''
+        this.root.insertBefore(r, this.overlay)
+      }
     }
   }
 
@@ -333,11 +341,19 @@ export class CombatView {
       c.style.width = '100%'
       c.style.height = '100%'
     }
-    add(c, 'div', 'card-type', typeShort(a.type))
+    const typeEl = add(c, 'div', 'card-type', typeShort(a.type))
     add(c, 'div', 'card-grade', gradeRoman(a.grade))
     const st = ammoStats(a)
-    add(c, 'div', 'card-dmg', String(st.dmg))
+    const dmgEl = add(c, 'div', 'card-dmg', String(st.dmg))
+    if (mini) {
+      // 38px 폭에서 탄종 글자와 순번 배지가 겹친다 → 글자를 줄이고 피해 수치는 뺀다
+      typeEl.style.fontSize = '8px'
+      typeEl.style.letterSpacing = '0'
+      dmgEl.style.display = 'none'
+    }
     c.dataset['uid'] = a.uid
+    // 색맹 패턴 오버레이(settings.ts 의 .card[data-type=…])가 붙을 자리
+    c.dataset['type'] = a.type
     c.setAttribute('role', 'button')
     c.setAttribute(
       'aria-label',
@@ -399,7 +415,10 @@ export class CombatView {
       setClass(sl, 'filled', true)
       sl.style.borderColor = typeColor(a.type)
       const card = this.makeCard(a, false, true)
-      add(card, 'div', 'card-order', orderMark(i + 1))
+      const ord = add(card, 'div', 'card-order', orderMark(i + 1))
+      // 미니 카드에서는 배지를 아래로 내린다 (위는 탄종 글자 자리)
+      ord.style.top = 'auto'
+      ord.style.bottom = '1px'
       sl.appendChild(card)
       sl.setAttribute('aria-label', `${i + 1}번 ${ammoLabel(a)}`)
     }

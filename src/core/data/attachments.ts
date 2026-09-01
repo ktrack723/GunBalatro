@@ -132,11 +132,11 @@ const BARRELS: Attachment[] = [
     name: '강선 각인',
     slot: 'barrel',
     rarity: 'common',
-    text: '등급 3 이상인 탄 DMG +30',
+    text: '등급 3 이상인 탄 DMG +42',
     hooks: {
       onFire(c) {
         if (c.ammo.grade < 3) return
-        c.dmg += 30
+        c.dmg += 42
         proc(c)
       },
     },
@@ -160,11 +160,11 @@ const BARRELS: Attachment[] = [
     name: '총검 거치대',
     slot: 'barrel',
     rarity: 'uncommon',
-    text: '거리 10m 이하면 모든 탄 DMG +55',
+    text: '거리 16m 이하면 모든 탄 DMG +80',
     hooks: {
       onFire(c) {
-        if (c.s.distance > 10) return
-        c.dmg += 55
+        if (c.s.distance > 16) return
+        c.dmg += 80
         proc(c)
       },
     },
@@ -174,19 +174,19 @@ const BARRELS: Attachment[] = [
     name: '정화 촉매',
     slot: 'barrel',
     rarity: 'uncommon',
-    text: '축성탄 DMG +50, 축성탄의 다음 탄 +15×등급',
+    text: '축성탄 DMG +95, 축성탄의 다음 탄 +32×등급',
     hooks: {
       onFire(c) {
         let hit = false
         if (isSanc(c.ammo)) {
-          c.dmg += 50
+          c.dmg += 95
           hit = true
         }
         // 축성탄의 "다음 탄 보너스" 추가분. 파이프라인의 pendingNextDmg 등록 순서에
         // 의존하지 않도록 직전 탄(prev)을 직접 보고 얹는다.
         const p = c.prev
         if (p !== null && isSanc(p)) {
-          c.dmg += 15 * p.grade
+          c.dmg += 32 * p.grade
           hit = true
         }
         if (hit) proc(c)
@@ -198,15 +198,14 @@ const BARRELS: Attachment[] = [
     name: '폭발 볼트 총열',
     slot: 'barrel',
     rarity: 'rare',
-    text: '고폭탄 발사마다 모든 탄 DMG +12 — 런 내내 누적',
+    text: '모든 탄 DMG +30. 고폭탄 발사마다 +12 누적',
     hooks: {
       // 런 스코프다. onCombatStart 에서 초기화하지 않는다 — 그게 핵심이다.
       // onFire 가 먼저 읽고 onAfterShot 이 나중에 올린다 →
       // 자기 자신이 이번 발사에 올린 값은 이번 발사에 적용되지 않는다.
       onFire(c) {
-        const v = getRunVar(c.s, c.self)
-        if (v <= 0) return
-        c.dmg += v
+        // 기본 +30 이 없으면 "받는 순간의 값 0" 이라 아무도 집지 않는다 (누적형의 고질병).
+        c.dmg += 30 + getRunVar(c.s, c.self)
         proc(c)
       },
       onAfterShot(c) {
@@ -256,14 +255,14 @@ const BARRELS: Attachment[] = [
     name: '신의 이름',
     slot: 'barrel',
     rarity: 'relic',
-    text: '이번 탄창에 처음 등장한 탄종이면 DMG +200',
+    text: '이번 탄창에 처음 등장한 탄종이면 DMG +480',
     hooks: {
       onFire(c) {
         const w = wildOn(c.s)
         for (const a of c.s.magFired) {
           if (sameType(a, c.ammo, w)) return
         }
-        c.dmg += 200
+        c.dmg += 480
         proc(c)
       },
     },
@@ -273,7 +272,7 @@ const BARRELS: Attachment[] = [
     name: '볼터의 원형',
     slot: 'barrel',
     rarity: 'relic',
-    text: '모든 탄의 DMG가 가방 최고 데미지 탄과 같아진다',
+    text: '모든 탄의 DMG가 가방 최고 데미지 탄의 2배가 된다',
     hooks: {
       onCombatStart(c) {
         let best = 0
@@ -293,7 +292,8 @@ const BARRELS: Attachment[] = [
         c.s.vars[c.self] = best
       },
       onFire(c) {
-        const best = getVar(c.s, c.self)
+        // 유물은 "덱의 하한을 상한 위로" 끌어올린다. 상한 그대로면 rare 한 장보다 약했다.
+        const best = getVar(c.s, c.self) * 2
         if (best <= c.dmg) return
         // 대입이지만 "최댓값으로 끌어올린다"는 의미이므로 Math.max 형태로만 쓴다.
         c.dmg = Math.max(c.dmg, best)
@@ -369,13 +369,13 @@ const HANDGUARDS: Attachment[] = [
     name: '교차 점화',
     slot: 'handguard',
     rarity: 'uncommon',
-    text: '직전 탄과 다른 탄종이면 HEAT +1.10',
+    text: '직전 탄과 다른 탄종이면 HEAT +1.70',
     hooks: {
       onFire(c) {
         const p = c.prev
         if (p === null) return
         if (sameType(p, c.ammo, wildOn(c.s))) return
-        c.heatGain += 1.1
+        c.heatGain += 1.7
         proc(c)
       },
     },
@@ -385,12 +385,12 @@ const HANDGUARDS: Attachment[] = [
     name: '승천 밸브',
     slot: 'handguard',
     rarity: 'uncommon',
-    text: '직전 탄보다 등급이 높으면 HEAT +1.60',
+    text: '직전 탄보다 등급이 높으면 HEAT +2.20',
     hooks: {
       onFire(c) {
         const p = c.prev
         if (p === null || c.ammo.grade <= p.grade) return
-        c.heatGain += 1.6
+        c.heatGain += 2.2
         proc(c)
       },
     },
@@ -400,12 +400,12 @@ const HANDGUARDS: Attachment[] = [
     name: '역류 밸브',
     slot: 'handguard',
     rarity: 'uncommon',
-    text: '직전 탄보다 등급이 낮으면 HEAT +2.20',
+    text: '직전 탄보다 등급이 낮으면 HEAT +3.00',
     hooks: {
       onFire(c) {
         const p = c.prev
         if (p === null || c.ammo.grade >= p.grade) return
-        c.heatGain += 2.2
+        c.heatGain += 3
         proc(c)
       },
     },
@@ -429,15 +429,16 @@ const HANDGUARDS: Attachment[] = [
     name: '순교의 화로',
     slot: 'handguard',
     rarity: 'rare',
-    text: '사격을 마칠 때마다 시작 온도 +0.45 — 런 내내 누적',
+    text: '시작 온도 +1.0. 사격을 마칠 때마다 +0.5 누적',
     hooks: {
       // 런 스코프 누적. 전투가 끝나도 사라지지 않는 이 게임의 주력 온도 스케일러다.
+      // 기본 +1.0 이 없으면 "장착한 순간의 가치 0" 이라 봇도 사람도 집을 이유를 못 찾는다.
       onCombatStart(c) {
-        c.s.heatStartBase += getRunVar(c.s, c.self)
+        c.s.heatStartBase += 1 + getRunVar(c.s, c.self)
       },
       onMagEnd(c) {
-        addRunVar(c.s, c.self, 0.45)
-        c.s.heatStartBase += 0.45
+        addRunVar(c.s, c.self, 0.5)
+        c.s.heatStartBase += 0.5
       },
     },
   },
@@ -446,11 +447,13 @@ const HANDGUARDS: Attachment[] = [
     name: '연쇄 점화',
     slot: 'handguard',
     rarity: 'rare',
-    text: '이번 탄창에서 이미 쏜 탄 수 ×1.4 만큼 HEAT +',
+    text: '이미 쏜 탄 수 ×1.35 만큼 HEAT + (상한 +4.05)',
     hooks: {
       onFire(c) {
         if (c.index <= 0) return
-        c.heatGain += c.index * 1.4
+        // 상한 3발분(+4.5). 삼각수 그대로면 용량에 대해 초선형(cap8 이면 한 탄창 +39)이라
+        // 넓은 탄창만 정답이 된다. 4번째 탄부터 평평해지면 "후반 가속"은 남고 폭 편중만 빠진다.
+        c.heatGain += Math.min(c.index, 3) * 1.35
         proc(c)
       },
     },
@@ -460,12 +463,15 @@ const HANDGUARDS: Attachment[] = [
     name: '이단심문관의 화염',
     slot: 'handguard',
     rarity: 'relic',
-    text: '소이탄을 쏘면 남은 탄의 온도 획득 2배 (중첩 없음)',
+    text: '소이탄을 쏘면 HEAT +5, 남은 탄 온도 2배 (1회)',
     hooks: {
       onAfterShot(c) {
         if (!isType(c.s, c.ammo, 'INC')) return
         if (c.s.heatDoublePending) return
         c.s.heatDoublePending = true
+        // 발화 그 자체. 배수만으로는 초반 온도가 작아 유물다운 폭발이 안 났다.
+        c.s.heat += 5
+        if (c.s.heat > c.s.peakHeat) c.s.peakHeat = c.s.heat
         proc(c)
       },
     },
@@ -475,13 +481,17 @@ const HANDGUARDS: Attachment[] = [
     name: '영원한 불',
     slot: 'handguard',
     rarity: 'relic',
-    text: '온도가 사격 사이에 유지된다. 사격 시작마다 HEAT −5',
+    text: '온도가 사격 사이 유지(−5). 전투 시작 HEAT +8',
     hooks: {
       // mods 로 표현할 수 없는 "온도 초기화 규칙 자체의 변경"이므로 플래그 방식이다.
       // 파이프라인은 flags['eternalFlame'] 가 서 있으면 사격 시작 시 온도를 1.00 으로
       // 되돌리지 않고 heat = max(1, heat - 5) 로 이월한다.
       onCombatStart(c) {
         c.s.flags['eternalFlame'] = true
+        // 첫 사격에도 값이 있어야 한다. 이월 경로는 heatStartBase 를 아예 읽지 않으므로
+        // (combat.fire 의 eternalFlame 분기가 heat−5 만 본다) 현재 온도를 직접 지핀다.
+        c.s.heat += 8
+        if (c.s.heat > c.s.peakHeat) c.s.peakHeat = c.s.heat
       },
     },
   },
@@ -559,14 +569,19 @@ const OPTICS: Attachment[] = [
     name: '성별 렌즈',
     slot: 'optic',
     rarity: 'uncommon',
-    text: '사격 시작 시 탄창 1번 탄을 축성탄으로 (등급 유지)',
+    text: '1번 탄을 축성탄으로(등급 +2). 축성탄 HEAT +0.8',
     hooks: {
+      onFire(c) {
+        if (!isSanc(c.ammo)) return
+        c.heatGain += 0.8
+        proc(c)
+      },
       onMagStart(c) {
         if (c.plan.length === 0) return
         const first = c.plan[0]
         if (first.type === 'SANC') return
         // 가방 원본을 오염시키지 않도록 uid 를 유지한 복제본으로 교체한다.
-        c.plan[0] = { uid: first.uid, type: 'SANC', grade: first.grade }
+        c.plan[0] = { uid: first.uid, type: 'SANC', grade: GRADE_PLUS2[first.grade] }
       },
     },
   },
@@ -596,7 +611,7 @@ const OPTICS: Attachment[] = [
     name: '영혼 표식',
     slot: 'optic',
     rarity: 'rare',
-    text: '적 HP 25% 이하 시 HEAT +6, 발동마다 +2 누적 (전투 1회)',
+    text: '적 HP 35% 이하 시 HEAT +8, 발동마다 +2 누적 (전투 1회)',
     hooks: {
       // 런 스코프 누적. 표식은 전투가 끝나도 지워지지 않는다 — 광학 축의 복리 장치.
       onCombatStart(c) {
@@ -605,9 +620,9 @@ const OPTICS: Attachment[] = [
       onAfterShot(c) {
         if (getFlag(c.s, 'soulMark')) return
         const e = c.s.enemy
-        if (e.hp <= 0 || e.hp > e.maxHp * 0.25) return
+        if (e.hp <= 0 || e.hp > e.maxHp * 0.35) return
         // 이번 발사는 이미 끝났으므로 heatGain 이 아니라 현재 온도를 직접 올린다.
-        c.s.heat += 6 + getRunVar(c.s, c.self)
+        c.s.heat += 8 + getRunVar(c.s, c.self)
         addRunVar(c.s, c.self, 2)
         if (c.s.heat > c.s.peakHeat) c.s.peakHeat = c.s.heat
         c.s.flags['soulMark'] = true
@@ -702,7 +717,8 @@ const STOCKS: Attachment[] = [
     name: '완충기',
     slot: 'stock',
     rarity: 'uncommon',
-    text: '첫 두 번의 사격 행동은 거리 소모 −3m',
+    text: '시작 거리 +6m, 사격 −1m. 첫 두 사격 추가 −2m',
+    mods: { startDist: 6, fireCost: -1 },
     hooks: {
       onCombatStart(c) {
         c.s.vars[c.self] = 0
@@ -713,7 +729,7 @@ const STOCKS: Attachment[] = [
         if (used >= 2) return
         c.s.vars[c.self] = used + 1
         // 거리 소모 감소분을 같은 값의 환급으로 표현한다 (덧셈, 순서 무관).
-        c.s.distance += 3
+        c.s.distance += 2
       },
     },
   },
@@ -745,11 +761,11 @@ const STOCKS: Attachment[] = [
     name: '참회의 사슬',
     slot: 'stock',
     rarity: 'uncommon',
-    text: '전투 시작 거리 −10m, 모든 탄 DMG +75',
+    text: '전투 시작 거리 −10m, 모든 탄 DMG +52',
     mods: { startDist: -10 },
     hooks: {
       onFire(c) {
-        c.dmg += 75
+        c.dmg += 52
         proc(c)
       },
     },
@@ -791,16 +807,16 @@ const STOCKS: Attachment[] = [
     name: '거인의 보폭',
     slot: 'stock',
     rarity: 'rare',
-    text: '적 접근 속도 −2m/행동 (최소 2)',
-    mods: { enemySpeed: -2 },
+    text: '적 접근 속도 −3m/행동 (최소 2)',
+    mods: { enemySpeed: -3 },
   },
   {
     id: 'st_infinite_magazine',
     name: '무한 탄약고',
     slot: 'stock',
     rarity: 'relic',
-    text: '배출이 거리를 소모하지 않는다. TRAY +3',
-    mods: { tray: 3 },
+    text: '배출이 거리를 소모하지 않는다. TRAY +5',
+    mods: { tray: 5 },
     hooks: {
       // ejectCost 를 음수로 밀면 거리가 늘어나는 사고가 나므로 규칙 플래그로 표현한다.
       // combat 은 flags['freeEjectAlways'] 가 서 있으면 배출 비용을 0 으로 본다.
@@ -862,11 +878,11 @@ const RAILS: Attachment[] = [
     name: '삼위일체 각인',
     slot: 'rail',
     rarity: 'uncommon',
-    text: '탄창에 탄종 3종 이상이면 모든 발사 HEAT +1.50',
+    text: '탄창에 탄종 3종 이상이면 모든 발사 HEAT +1.10',
     hooks: {
       onFire(c) {
         if (distinctTypeCount(c.s.magPlan, wildOn(c.s)) < 3) return
-        c.heatGain += 1.5
+        c.heatGain += 1.1
         proc(c)
       },
     },
@@ -961,14 +977,14 @@ const RAILS: Attachment[] = [
     name: '불안정 노심',
     slot: 'rail',
     rarity: 'rare',
-    text: '모든 발사 HEAT +6.00. 온도 30 초과 시 사격 즉시 종료',
+    text: '모든 발사 HEAT +4.00. 온도 24 초과 시 사격 즉시 종료',
     hooks: {
       onFire(c) {
-        c.heatGain += 6
+        c.heatGain += 4
         proc(c)
       },
       onAfterShot(c) {
-        if (c.s.heat > 30) c.s.abortMag = true
+        if (c.s.heat > 24) c.s.abortMag = true
       },
     },
   },
@@ -977,12 +993,14 @@ const RAILS: Attachment[] = [
     name: '기계교 각인',
     slot: 'rail',
     rarity: 'relic',
-    text: '전투 시작 시 다른 부착물 1개를 무작위 복제',
+    text: '전투 시작 시 다른 부착물 2개를 무작위 복제',
     hooks: {
       onCombatStart(c) {
         if (c.s.dryRun) return
         const pool = c.s.attachments.filter((a) => a.id !== c.self && a.rarity !== 'relic')
         if (pool.length === 0) return
+        // 복제 대상 풀에서 유물을 빼므로 증식은 여기서 멈춘다 (복제본은 다시 복제하지 않는다).
+        c.s.attachments.push(c.s.rng.pick(pool))
         c.s.attachments.push(c.s.rng.pick(pool))
       },
     },
@@ -992,12 +1010,12 @@ const RAILS: Attachment[] = [
     name: '성인의 유해',
     slot: 'rail',
     rarity: 'relic',
-    text: '이번 런에서 획득한 부착물 수 ×14 만큼 모든 탄 DMG +',
+    text: '이번 런에서 획득한 부착물 수 ×20 만큼 모든 탄 DMG +',
     hooks: {
       // 기획서 §6 원안: "이번 런에서 획득한 부착물 수". 교체로 버린 것도 센다.
       // → 보상방에서 "아무거나 줍기"를 처음으로 정당화하는 부착물.
       onCombatStart(c) {
-        c.s.vars[c.self] = getVar(c.s, '__taken') * 14
+        c.s.vars[c.self] = getVar(c.s, '__taken') * 20
       },
       onFire(c) {
         const v = getVar(c.s, c.self)
