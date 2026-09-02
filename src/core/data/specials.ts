@@ -166,6 +166,62 @@ export const SPECIALS: SpecialDef[] = [
     },
   },
 
+  // --- 저온 축 — 온도가 낮을수록 강하다 -------------------------------------
+  //   온도 이월(기본 50%)이 있는 v2 에서, 이 탄들은 "굳이 식힌다"는 반대 선택을 만든다.
+  {
+    id: 'sp_cryo',
+    name: '냉동탄',
+    text: '발사 전 온도가 낮을수록 강하다 (DMG +(15−온도)×26)',
+    rarity: 'uncommon',
+    dmg: 18,
+    heat: 0.15,
+    price: 34,
+    color: '#7fe3ff',
+    hooks: {
+      onFire(c) {
+        const gap = 15 - c.heatBefore
+        if (gap <= 0) return
+        c.dmg += Math.round(amp(c, gap * 26))
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'sp_firststrike',
+    name: '초탄',
+    text: '발사 전 온도 3.5 이하면 DMG +300',
+    rarity: 'rare',
+    dmg: 40,
+    heat: 0.1,
+    price: 58,
+    color: '#cfe6ff',
+    hooks: {
+      onFire(c) {
+        if (c.heatBefore > 3.5) return
+        c.dmg += amp(c, 300)
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'sp_purge',
+    name: '방열탄',
+    text: '온도를 절반으로 낮추고 그만큼 DMG 로 바꾼다',
+    rarity: 'uncommon',
+    dmg: 10,
+    heat: 0,
+    price: 30,
+    color: '#a9c4d6',
+    hooks: {
+      onFire(c) {
+        const drop = c.s.heat / 2
+        c.dmg += Math.round(amp(c, drop * 34))
+        c.s.heat -= drop
+        proc(c)
+      },
+    },
+  },
+
   // --- 유물 -----------------------------------------------------------------
   {
     id: 'sp_singularity',

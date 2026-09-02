@@ -13,7 +13,7 @@ import type {
   Round,
   SpecialDef,
 } from './types'
-import { BASIC_DMG, BASIC_HEAT } from './types'
+import { BASE_HEAT_CARRY, BASIC_DMG, BASIC_HEAT } from './types'
 import { SPECIAL_BY_ID } from './data/specials'
 
 /** 순회 순서: 총열 → 덮개 → 광학 → 스톡 → 탄창 → 레일(좌→우) */
@@ -26,7 +26,10 @@ export function orderedAttachments(l: Loadout): Attachment[] {
   return out
 }
 
-function sumMods(l: Loadout, key: 'cap' | 'startDist' | 'fireCost' | 'enemySpeed' | 'railSlots' | 'startHeat'): number {
+function sumMods(
+  l: Loadout,
+  key: 'cap' | 'startDist' | 'fireCost' | 'enemySpeed' | 'railSlots' | 'startHeat' | 'heatCarry',
+): number {
   let n = 0
   for (const a of orderedAttachments(l)) {
     const v = a.mods?.[key]
@@ -57,6 +60,12 @@ export function computeFireCost(l: Loadout, speed: number): number {
 
 export function computeStartHeat(l: Loadout): number {
   return sumMods(l, 'startHeat')
+}
+
+/** 사격 사이 온도 이월 비율 (0~1) */
+export function computeHeatCarry(l: Loadout): number {
+  const v = BASE_HEAT_CARRY + sumMods(l, 'heatCarry')
+  return v < 0 ? 0 : v > 1 ? 1 : v
 }
 
 export function railSlotsOf(l: Loadout): number {

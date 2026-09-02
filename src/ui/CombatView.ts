@@ -9,9 +9,11 @@
 import type { Attachment, CombatState, Round, SlotKind } from '../core/types'
 import { BASIC_DMG, BASIC_HEAT, SLOT_LABEL } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
-import { basicRound, makeRound, previewDamage, swapAttachment } from '../core/combat'
+import { basicRound, makeRound, swapAttachment } from '../core/combat'
+import { computeHeatCarry } from '../core/pipeline'
 import { add, Bin, clamp, clear, el, fmtInt, on, orderMark, setClass } from './dom'
 import { popover } from './popover'
+import { sfx } from '../audio/Sfx'
 
 const HEAT_TIERS = [
   { at: 0, color: '#8d949c', name: '냉각' },
@@ -55,6 +57,7 @@ export class CombatView {
   private distCost!: HTMLElement
   private heatNum!: HTMLElement
   private heatFill!: HTMLElement
+  private carryLabel!: HTMLElement
   private magSlots!: HTMLElement
   private previewNum!: HTMLElement
   private ammoRow!: HTMLElement
@@ -64,6 +67,9 @@ export class CombatView {
   private s: CombatState | null = null
   private plan: Round[] = []
   private busy = false
+  private lastHeat = 1
+  /** 탄 카드의 잔량 표시 노드 — 탭마다 전체를 다시 그리지 않고 숫자만 고친다 */
+  private countNodes = new Map<string, HTMLElement>()
   private fxNodes: HTMLElement[] = []
 
   constructor(host: HTMLElement, cb: CombatViewCallbacks) {
@@ -105,6 +111,7 @@ export class CombatView {
     this.heatNum = add(heat, 'span', 'heat-num', '1.00')
     const ht = add(heat, 'div', 'heat-track')
     this.heatFill = add(ht, 'div', 'heat-fill')
+    this.carryLabel = add(heat, 'span', 'heat-carry', '')
     for (const t of [3, 8, 16, 30]) {
       const tick = add(ht, 'div', 'heat-tick')
       tick.style.left = (heatFrac(t) * 100).toFixed(1) + '%'
@@ -114,8 +121,8 @@ export class CombatView {
     const mag = add(root, 'div', 'mag-row')
     this.magSlots = add(mag, 'div', 'mag-slots')
     const pv = add(mag, 'div', 'mag-preview')
-    add(pv, 'div', 'mag-preview-label', '예상 피해')
-    this.previewNum = add(pv, 'div', 'mag-preview-num', '—')
+    add(pv, 'div', 'mag-preview-label', '장전')
+    this.previewNum = add(pv, 'div', 'mag-preview-num', '0/0')
 
     // --- 탄 선택 ---
     this.ammoRow = add(root, 'div', 'ammo-row')
@@ -153,6 +160,7 @@ export class CombatView {
     }
     const plan = this.plan.slice()
     this.plan = []
+    sfx('confirm')
     this.cb.onFire(plan)
   }
 
@@ -166,6 +174,7 @@ export class CombatView {
     this.renderMag(s)
     this.renderAmmo(s)
     this.renderRack(s)
+    this.renderCarry(s)
   }
 
   private stillAvailable(s: CombatState, r: Round): boolean {
@@ -204,7 +213,17 @@ export class CombatView {
     this.distCost.textContent = '▶ ' + cost + 'm/사격'
   }
 
+  /** 사격 사이 이월 비율을 상시 표시한다 — 이제 온도는 전투 내내 이어지는 자원이다 */
+  private renderCarry(s: CombatState): void {
+    const pctVal = Math.round(computeHeatCarry(s.loadout) * 100)
+    this.carryLabel.textContent = '이월 ' + pctVal + '%'
+    this.carryLabel.style.color = pctVal >= 65 ? 'var(--inc)' : pctVal <= 35 ? '#7fe3ff' : 'var(--text-faint)'
+  }
+
   setHeat(heat: number): void {
+    const tierOf = (h: number): number => (h >= 30 ? 4 : h >= 16 ? 3 : h >= 8 ? 2 : h >= 3 ? 1 : 0)
+    if (tierOf(heat) > tierOf(this.lastHeat)) sfx('heatUp')
+    this.lastHeat = heat
     this.heatNum.textContent = heat.toFixed(2)
     const c = heatColor(heat)
     this.heatNum.style.color = c
@@ -238,6 +257,7 @@ export class CombatView {
         on(slot, 'click', () => {
           if (this.busy) return
           this.plan.splice(i, 1)
+          sfx('back')
           this.refreshPlan()
         }),
       )
@@ -245,35 +265,48 @@ export class CombatView {
     this.updatePreview()
   }
 
+  /**
+   * 예상 피해는 **보여주지 않는다.**
+   * 대신 플레이어가 실제로 알아야 하는 것 — 장전 수와 다음 사격으로 넘어갈 온도 —
+   * 를 띄운다. 온도가 사격 사이에 이월되므로 "지금 얼마나 남기고 끝내는가"가
+   * 다음 탄창의 시작점이 된다.
+   */
   private updatePreview(): void {
     const s = this.s
     if (s === null) return
-    if (this.plan.length === 0) {
-      this.previewNum.textContent = '—'
-      this.previewNum.classList.remove('lethal')
-      this.fireBtn.disabled = true
-      return
-    }
-    const { expected, approximate } = previewDamage(s, this.plan)
-    this.previewNum.textContent = (approximate ? '~' : '') + fmtInt(expected)
-    setClass(this.previewNum, 'lethal', expected >= s.enemy.hp)
-    this.fireBtn.disabled = this.busy
+    this.previewNum.textContent = this.plan.length + '/' + s.cap
+    setClass(this.previewNum, 'lethal', this.plan.length >= s.cap)
+    this.fireBtn.disabled = this.busy || this.plan.length === 0
     const sub = this.fireBtn.querySelector('small')
     if (sub !== null) {
       sub.textContent = '−' + s.fireCost + 'm · ' + this.plan.length + '/' + s.cap + '발'
     }
   }
 
+  /**
+   * 탭 한 번에 탄 선택 줄을 통째로 다시 그리면 DOM 이 detach 되어
+   * 빠른 연타가 씹힌다. 잔량 숫자만 제자리에서 고친다.
+   */
   private refreshPlan(): void {
     const s = this.s
     if (s === null) return
     this.renderMag(s)
-    this.renderAmmo(s)
+    this.updateCounts(s)
+  }
+
+  private updateCounts(s: CombatState): void {
+    for (const [id, node] of this.countNodes) {
+      const left = (s.specials[id] ?? 0) - this.plan.filter((r) => r.special === id).length
+      node.textContent = String(left)
+      const card = node.parentElement
+      if (card !== null) setClass(card, 'out', left <= 0)
+    }
   }
 
   // --- 탄 선택 -------------------------------------------------------------
   private renderAmmo(s: CombatState): void {
     clear(this.ammoRow)
+    this.countNodes.clear()
 
     // 기본탄 — 무한
     const basic = add(this.ammoRow, 'div', 'ammo-card basic')
@@ -300,11 +333,13 @@ export class CombatView {
       card.style.setProperty('--c', def.color)
       add(card, 'div', 'ammo-name', def.name)
       add(card, 'div', 'ammo-stat', def.dmg + ' · ' + def.heat.toFixed(1))
-      add(card, 'div', 'ammo-count', String(left))
+      const cnt = add(card, 'div', 'ammo-count', String(left))
+      this.countNodes.set(id, cnt)
       setClass(card, 'out', left <= 0)
       this.bin.add(
         on(card, 'click', () => {
-          if (left <= 0) return
+          const cur = (s.specials[id] ?? 0) - this.plan.filter((r) => r.special === id).length
+          if (cur <= 0) return
           this.push(makeRound(id))
         }),
       )
@@ -331,6 +366,7 @@ export class CombatView {
     if (s === null || this.busy) return
     if (this.plan.length >= s.cap) return
     this.plan.push(r)
+    sfx('tap', 1 + this.plan.length * 0.03)
     this.refreshPlan()
   }
 

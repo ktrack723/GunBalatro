@@ -409,8 +409,9 @@ export const ATTACHMENTS: Attachment[] = [
     name: '냉각 자켓',
     slot: 'magazine',
     rarity: 'rare',
-    text: '용량 5. 사격 종료 시 온도의 35%를 다음 사격으로 이월',
-    mag: { cap: 5, heatCarryRatio: 0.35 },
+    text: '용량 5. 온도 이월 +35%p (총 85%)',
+    mag: { cap: 5 },
+    mods: { heatCarry: 0.35 },
   },
   {
     id: 'mg_executioner',
@@ -524,6 +525,38 @@ export const ATTACHMENTS: Attachment[] = [
       onFire: (c) => { c.heatGain += 4.5; proc(c) },
       onAfterShot: (c) => { if (c.s.heat > 26) c.s.abortMag = true },
     },
+  },
+  {
+    id: 'hg_cryo',
+    name: '급속 냉각기',
+    slot: 'handguard',
+    rarity: 'uncommon',
+    text: '온도 이월 −40%p. 발사 전 온도 4 이하면 DMG +85',
+    mods: { heatCarry: -0.4 },
+    hooks: { onFire: (c) => { if (c.heatBefore <= 4) { c.dmg += 85; proc(c) } } },
+  },
+  {
+    id: 'br_frostbite',
+    name: '한랭 총열',
+    slot: 'barrel',
+    rarity: 'rare',
+    text: '발사 전 온도가 낮을수록 강하다 — DMG + (12 − 온도) × 22',
+    hooks: {
+      onFire: (c) => {
+        const gap = 12 - c.heatBefore
+        if (gap <= 0) return
+        c.dmg += Math.round(gap * 22)
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'st_heatsink',
+    name: '방열 개머리판',
+    slot: 'stock',
+    rarity: 'common',
+    text: '온도 이월 +15%p',
+    mods: { heatCarry: 0.15 },
   },
   {
     id: 'rl_relicbones',

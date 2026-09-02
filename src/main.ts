@@ -1,3 +1,4 @@
+import { unlockSfx } from './audio/Sfx'
 // ============================================================================
 // main.ts — 부팅 · rAF 루프 · iOS Safari 대응 (TECH.md §4)
 //   앱 상태기계는 app/App.ts 가 갖는다. 여기서는 "돌아가게 만드는 배선"만 한다.
@@ -42,10 +43,12 @@ function mountFxLayers(): void {
 // ---------------------------------------------------------------------------
 
 class Audio implements AudioHook {
+  // ZzFX 는 절차 생성이라 오디오 에셋이 필요 없다 (src/audio/Sfx.ts)
   private ctx: AudioContext | null = null
   private tried = false
 
   resume(): void {
+    unlockSfx()
     type Ctor = new () => AudioContext
     const w = window as unknown as { AudioContext?: Ctor; webkitAudioContext?: Ctor }
     const Ctx = w.AudioContext ?? w.webkitAudioContext

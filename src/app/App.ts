@@ -37,6 +37,7 @@ import { pickDerelict } from '../core/data/events'
 import { hasSave, loadRun, saveRun } from '../ui/save'
 import {
   distortIntensity,
+  loadSettings,
   flashIntensity,
   haptic,
   shakeIntensity,
@@ -44,6 +45,7 @@ import {
   subscribeSettings,
 } from '../ui/settings'
 import { toast } from '../ui/toast'
+import { setSfxEnabled } from '../audio/Sfx'
 import { add, el, on } from '../ui/dom'
 import { CombatView, showSwapSheet } from '../ui/CombatView'
 import { showTitle } from '../ui/screens/TitleScreen'
@@ -685,6 +687,7 @@ export class App {
   }
 
   private applyFxSettings(): void {
+    setSfxEnabled(loadSettings().sound)
     const sc = this.scene
     if (sc === null) return
     sc.fx.setIntensity(flashIntensity(), shakeIntensity())

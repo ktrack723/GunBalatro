@@ -21,6 +21,7 @@ import {
   computeEnemySpeed,
   computeFireCost,
   computeStartDistance,
+  computeHeatCarry,
   computeStartHeat,
   defOf,
   fireOneShot,
@@ -244,8 +245,9 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
     safe(() => s.enemy.passive?.onMagEnd?.(mc), s.enemy.passive.id)
   }
 
-  const carryRatio = rules.heatCarryRatio ?? 0
-  const carried = carryRatio > 0 ? s.heat * carryRatio : 0
+  // ★ 온도는 사격 사이에 이월된다 (기본 50%). 부착물이 이 비율을 바꾼다.
+  const carryRatio = computeHeatCarry(s.loadout)
+  const carried = s.heat * carryRatio
   s.heatStartBase = BASE_HEAT + computeStartHeat(s.loadout) + carried
   out.push({ t: 'magEnd', heatCarried: carried, totalDamage: s.magDamage })
 

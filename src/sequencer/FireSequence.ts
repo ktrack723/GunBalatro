@@ -15,6 +15,7 @@ import type { GameScene } from '../view3d/Scene'
 import type { CombatView } from '../ui/CombatView'
 import { add, clear, el } from '../ui/dom'
 import { dur, easeOut, easeOutBack, tween, wait } from './tween'
+import { sfx, sfxShot } from '../audio/Sfx'
 
 export interface SeqDeps {
   view: CombatView
@@ -93,6 +94,7 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
       easeOutBack,
     )
     fly.remove()
+    sfx('roundIn', 0.92 + (k % 3) * 0.06, 0)
     slot.classList.add('filled')
     slot.style.setProperty('--c', colorOf(r))
     slot.textContent = label(r)
@@ -102,6 +104,7 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
 
   // 3) 탄창을 총에 물린다
   caption.textContent = '삽탄'
+  sfx('magIn')
   if (has3d(d.scene)) d.scene.gun.reloadAnim()
   await tween(
     dur(220, sp),
@@ -111,6 +114,7 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
     },
     easeOut,
   )
+  sfx('boltFwd')
   d.haptic('heavy')
   stage.remove()
 }
@@ -129,6 +133,8 @@ async function playShot(
   const color = parseInt(colorOf(ev.round).slice(1), 16)
 
   for (const id of ev.triggered) d.view.flashRack(id)
+  if (ev.triggered.length > 0) sfx('proc', 1, 60)
+  sfxShot(ev.heatAfter)
 
   if (has3d(d.scene)) {
     d.scene.gun.kick(0.6 + Math.min(1, ev.heatAfter / 30))
@@ -146,6 +152,7 @@ async function playShot(
 
   await wait(100, sp)
   if (has3d(d.scene)) {
+    sfx('hit', 0.95 + Math.random() * 0.1, 0)
     d.scene.enemy.hitFlash()
     d.scene.enemy.shake()
     d.scene.fx.impact(d.scene.enemy.targetWorld, color)
@@ -218,6 +225,7 @@ export async function playFireSequence(
           await wait(120, sp)
           break
         case 'knockback':
+          sfx('knock')
           d.view.showProc(ev.meters > 0 ? '밀어냄 +' + ev.meters + 'm' : ev.meters + 'm')
           d.view.setDistance(ev.distanceAfter, s.enemy.startDist, s.fireCost)
           if (has3d(d.scene)) d.scene.enemy.setDistance(ev.distanceAfter, s.enemy.startDist, true)
@@ -228,6 +236,7 @@ export async function playFireSequence(
           await wait(120, sp)
           break
         case 'magEnd':
+          sfx('boltBack')
           if (has3d(d.scene)) d.scene.gun.boltBack()
           await wait(260, sp)
           break
@@ -237,6 +246,7 @@ export async function playFireSequence(
           await wait(420, sp)
           break
         case 'enemyDead':
+          sfx('kill')
           if (has3d(d.scene)) {
             d.scene.enemy.die()
             d.scene.setZoom(1.06)
@@ -245,6 +255,7 @@ export async function playFireSequence(
           if (has3d(d.scene)) d.scene.setZoom(1)
           break
         case 'playerDead':
+          sfx('death')
           if (has3d(d.scene)) {
             d.scene.fx.setRoll(-18)
             d.scene.fx.screenFlash(0.5 * d.flashIntensity(), dur(200, sp))

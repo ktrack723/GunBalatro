@@ -190,6 +190,19 @@ export function showSettings(host: HTMLElement): Promise<void> {
     },
   )
 
+  block<boolean>(
+    '효과음',
+    '오디오 파일 없이 코드로 합성한다(ZzFX). 발사음은 총열 온도에 따라 달라진다.',
+    [
+      { label: '켬', value: true },
+      { label: '끔', value: false },
+    ],
+    (s) => s.sound,
+    (v) => {
+      patchSettings({ sound: v })
+    },
+  )
+
   const notes = add(root, 'div')
   const n1 = add(
     notes,

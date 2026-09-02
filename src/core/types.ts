@@ -127,6 +127,12 @@ export interface StaticMods {
   railSlots?: number
   /** 사격 시작 온도 증감 — BALANCE R6: 탄창 부위와 유물만 허용 */
   startHeat?: number
+  /**
+   * 사격 사이 온도 이월 비율 증감.
+   * 기본 이월은 BASE_HEAT_CARRY(50%)이고, 여기 값이 더해진다 (0~1로 클램프).
+   * 음수면 더 빨리 식는다 — "저온 빌드"를 여는 축이다.
+   */
+  heatCarry?: number
 }
 
 export interface Attachment {
@@ -150,8 +156,6 @@ export interface MagazineRules {
   heatGainMul?: number
   /** 발사한 탄이 소모되지 않을 확률 (특수탄만 대상) */
   notConsumedChance?: number
-  /** 사격 종료 시 다음 사격으로 이월할 온도 비율 */
-  heatCarryRatio?: number
 }
 
 export interface AttachmentHooks {
@@ -419,11 +423,21 @@ export interface DerelictOption {
 // 상수
 // ---------------------------------------------------------------------------
 export const BASE_HEAT = 1.0
+/**
+ * ★ 사격 사이 온도 이월 기본값.
+ * 온도는 더 이상 탄창마다 초기화되지 않는다 — 전투 내내 이어지는 자원이다.
+ * 그래서 "언제 큰 걸 쏘는가"가 한 탄창 안이 아니라 전투 전체로 확장된다.
+ *
+ * 대가: 시작 온도가 높아질수록 탄창 안의 배열 격차는 줄어든다(BALANCE §7.5 법칙 1).
+ * 그 반대 추로 **저온일수록 강해지는 탄**을 두어, 온도를 올릴지 낮게 유지할지
+ * 자체가 선택이 되게 했다.
+ */
+export const BASE_HEAT_CARRY = 0.5
 export const BASE_CAP = 5
 export const MAX_RAIL_SLOTS = 2
 
 export const HP_BASE = 400
-export const HP_GROWTH = 1.62
+export const HP_GROWTH = 1.74
 export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.63, boss: 2.5 } as const
 

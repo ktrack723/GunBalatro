@@ -18,6 +18,8 @@ export interface Settings {
   haptic: boolean
   colorblind: boolean
   bigText: boolean
+  /** 효과음 (ZzFX 절차 생성) */
+  sound: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   haptic: true,
   colorblind: false,
   bigText: false,
+  sound: true,
 }
 
 /** 저장 레코드. 설정 외에 1회성 안내 플래그를 같이 들고 있다. */
@@ -77,6 +80,7 @@ function parseSettings(v: unknown): Settings {
     haptic: pickBool(v['haptic'], DEFAULT_SETTINGS.haptic),
     colorblind: pickBool(v['colorblind'], DEFAULT_SETTINGS.colorblind),
     bigText: pickBool(v['bigText'], DEFAULT_SETTINGS.bigText),
+    sound: pickBool(v['sound'], DEFAULT_SETTINGS.sound),
   }
 }
 

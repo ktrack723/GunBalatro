@@ -44,7 +44,13 @@ function perms<T>(a: T[]): T[][] {
   return res
 }
 
-function orderSensitivity(): { bySector: number[]; overall: number } {
+/**
+ * 순서 민감도. **첫 탄창(온도 1.00)과 이월된 탄창을 따로 잰다.**
+ * 온도가 사격 사이 이월되므로 두 번째 탄창부터는 시작 온도가 높고,
+ * BALANCE §7.5 법칙 1 에 따라 배열 격차가 줄어든다 — 그 감소폭이 바로
+ * "이월 50%" 가 핵심 메커닉에서 가져가는 대가다. 안 재면 안 보인다.
+ */
+function orderSensitivity(startHeat: number): { bySector: number[]; overall: number } {
   const bySector: number[] = []
   const all: number[] = []
   for (let sector = 1; sector <= 8; sector += 1) {
@@ -63,6 +69,8 @@ function orderSensitivity(): { bySector: number[]; overall: number } {
       const s = startCombat(run.loadout, e, makeRng(7 + seed))
       s.enemy.hp = 1e12
       s.enemy.maxHp = 1e12
+      s.heatStartBase = startHeat
+      s.heat = startHeat
       const cap = Math.min(s.cap, 5)
       const plan: Round[] = [
         makeRound('sp_incendiary'),
@@ -148,9 +156,14 @@ function main(): void {
 
   out('⑤ 순서 민감도 — 같은 탄 묶음의 최선/최악 배열 비')
   out('─'.repeat(70))
-  const os = orderSensitivity()
-  for (let s = 0; s < 8; s += 1) out('   S' + (s + 1) + '  ' + os.bySector[s].toFixed(2) + 'x  ' + bar(Math.min(1, os.bySector[s] / 4), 18))
-  out('   전체 평균 ' + os.overall.toFixed(2) + 'x')
+  const os = orderSensitivity(1)
+  const osCarry = orderSensitivity(9)
+  out('   [첫 탄창 · 온도 1.00]')
+  for (let s = 0; s < 8; s += 1) out('   S' + (s + 1) + '  ' + os.bySector[s].toFixed(2) + 'x  ' + bar(Math.min(1, os.bySector[s] / 6), 16))
+  out('   평균 ' + os.overall.toFixed(2) + 'x')
+  out('   [이월된 탄창 · 온도 9.00]  ← 이월 50% 의 대가')
+  for (let s = 0; s < 8; s += 1) out('   S' + (s + 1) + '  ' + osCarry.bySector[s].toFixed(2) + 'x  ' + bar(Math.min(1, osCarry.bySector[s] / 6), 16))
+  out('   평균 ' + osCarry.overall.toFixed(2) + 'x')
   out()
 
   out('⑥ 갈림길 — 더 위험한 문을 고른 비율')
@@ -197,7 +210,11 @@ function main(): void {
   for (let i = 2; i < gap.length; i += 1) if (gap[i] >= gap[i - 1]) rising += 1
 
   const verdict = (ok: boolean): string => (ok ? '✅' : '❌')
-  out(verdict(os.overall >= 2.5) + ' 1. 순서가 중요한가 — 목표 ≥2.5x · 실측 ' + os.overall.toFixed(2) + 'x')
+  out(
+    verdict(osCarry.overall >= 2.5) +
+      ' 1. 순서가 중요한가 — 목표 ≥2.5x · 첫탄창 ' + os.overall.toFixed(2) +
+      'x · 이월탄창 ' + osCarry.overall.toFixed(2) + 'x (판정은 이월 기준)',
+  )
   out(verdict(t3 >= 0.35 && t3 <= 0.65) + ' 2. 갈림길이 선택인가 — 목표 35~65% · 실측 ' + pct(t3))
   out(verdict(never.length === 0) + ' 3. 사장된 부착물 없음 — 채택 0회 ' + never.length + '종')
   out(verdict(rising >= 4) + ' 4. 배울 것이 있는가 — 격차 증가 구간 ' + rising + '/6')
