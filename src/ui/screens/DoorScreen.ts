@@ -17,6 +17,14 @@ import {
   showLoadout,
 } from './LoadoutSheet'
 
+/** 보유 특수탄 총 발수 — v2 에서 '가방'을 대신하는 지표 */
+function specialCount(l: { specials: Record<string, number> }): number {
+  let n = 0
+  for (const v of Object.values(l.specials)) n += v
+  return n
+}
+
+
 /** ◆ 채움 + ◇ 빈칸 */
 function threatMark(t: Threat): string {
   return '◆'.repeat(t) + '◇'.repeat(3 - t)
@@ -114,7 +122,7 @@ export function showDoors(host: HTMLElement, run: RunState, doors: DoorOption[])
   info.style.display = 'flex'
   info.style.flexDirection = 'column'
   info.style.gap = '6px'
-  add(info, 'p', undefined, '탄피 ' + fmtInt(run.loadout.brass) + ' · 가방 ' + run.loadout.bag.length + '발')
+  add(info, 'p', undefined, '탄피 ' + fmtInt(run.loadout.brass) + ' · 특수탄 ' + specialCount(run.loadout) + '발')
   info.appendChild(loadoutStrip(run.loadout, bin))
 
   const row = buttonRow(root)

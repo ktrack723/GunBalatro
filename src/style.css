@@ -44,12 +44,13 @@
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
 
-  --h-top: 46px;
-  --h-dist: 26px;
-  --h-heat: 34px;
-  --h-mag: 66px;
-  --h-tray: 152px;
-  --h-act: 58px;
+  --h-top: 50px;
+  --h-dist: 30px;
+  --h-heat: 52px;   /* 발라트로급 큰 숫자 */
+  --h-mag: 78px;
+  --h-ammo: 96px;
+  --h-rack: 58px;
+  --h-act: 60px;
 
   --radius: 6px;
   --tap: 44px;
@@ -481,4 +482,152 @@ html, body {
 @media (max-height: 680px) {
   :root { --h-tray: 128px; --h-mag: 58px; --h-heat: 30px; }
   .card-grade { font-size: 14px; }
+}
+
+
+/* ==========================================================================
+   v2 — 특수탄 / 부착물 랙 / 큰 숫자
+   ========================================================================== */
+
+/* --- 온도: 화면에서 가장 큰 숫자. 이 게임의 유일한 곱셈 축이다 --- */
+.heat-row { gap: 10px; padding: 0 12px; }
+.heat-label { font-size: 11px; letter-spacing: .14em; }
+.heat-num {
+  font-family: var(--font-num);
+  font-size: 34px; font-weight: 900; line-height: 1;
+  min-width: 104px; letter-spacing: -.02em;
+  transition: color .18s, text-shadow .18s, transform .12s;
+}
+.heat-num.bump { transform: scale(1.18); }
+.heat-x { font-size: 15px; color: var(--text-faint); margin-right: -4px; }
+
+/* --- 거리 --- */
+.dist-num { font-size: 17px; min-width: 62px; }
+
+/* --- 탄창 슬롯 --- */
+.mag-row { height: var(--h-mag); }
+.mag-slot { width: 46px; height: 64px; }
+.mag-slot .card-order {
+  font-size: 11px; top: 2px; right: 4px;
+}
+.mag-preview-num { font-size: 26px; }
+.mag-preview-label { font-size: 10px; }
+
+/* --- 탄 선택 줄 (기본탄 + 보유 특수탄) --- */
+.ammo-row {
+  height: var(--h-ammo); flex: 0 0 auto;
+  display: flex; gap: 7px; padding: 7px 8px;
+  background: var(--bg-panel); border-top: 1px solid var(--line);
+  overflow-x: auto; scrollbar-width: none;
+}
+.ammo-row::-webkit-scrollbar { display: none; }
+.ammo-card {
+  position: relative; flex: 0 0 auto;
+  width: 74px; border-radius: var(--radius);
+  background: linear-gradient(165deg, #1c2026, #101317);
+  border: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 4px 3px;
+  transition: transform .12s cubic-bezier(.2,1.3,.4,1), opacity .15s, border-color .12s;
+}
+.ammo-card::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: var(--c, var(--ap));
+}
+.ammo-card:active { transform: scale(.93); }
+.ammo-card[disabled], .ammo-card.out { opacity: .3; }
+.ammo-name {
+  font-size: 11px; font-weight: 700; color: var(--c, var(--text));
+  text-align: center; line-height: 1.15;
+}
+.ammo-stat {
+  font-family: var(--font-num); font-size: 13px; font-weight: 800; color: var(--text);
+}
+.ammo-count {
+  position: absolute; top: 2px; right: 4px;
+  font-family: var(--font-num); font-size: 11px; font-weight: 800; color: var(--brass);
+}
+.ammo-card.basic { border-color: #3a424c; }
+.ammo-card.basic .ammo-count { color: var(--text-faint); }
+
+/* --- ★ 부착물 랙 — 항상 보이는 핵심 UI --- */
+.rack-row {
+  height: var(--h-rack); flex: 0 0 auto;
+  display: flex; gap: 5px; padding: 6px 8px;
+  background: var(--bg-panel-2); border-top: 1px solid var(--line);
+  overflow-x: auto; scrollbar-width: none;
+}
+.rack-row::-webkit-scrollbar { display: none; }
+.rack-slot {
+  flex: 1 1 0; min-width: 52px;
+  border-radius: 5px; border: 1px solid var(--line);
+  background: #0e1115; padding: 3px 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; overflow: hidden;
+  transition: transform .1s, border-color .14s, box-shadow .14s;
+}
+.rack-slot:active { transform: scale(.95); }
+.rack-slot.empty { border-style: dashed; opacity: .55; }
+.rack-slot.proc {
+  border-color: var(--brass);
+  box-shadow: 0 0 14px rgba(200,164,77,.55) inset, 0 0 10px rgba(200,164,77,.3);
+}
+.rack-kind { font-size: 8px; color: var(--text-faint); letter-spacing: .04em; }
+.rack-name {
+  font-size: 10px; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.rack-slot.r-uncommon .rack-name { color: #6fb0e0; }
+.rack-slot.r-rare .rack-name { color: #bb85e8; }
+.rack-slot.r-relic .rack-name { color: var(--r-relic); }
+
+/* --- 데미지 팝업: 발라트로급 --- */
+.dmg-chip { font-size: 40px; }
+.dmg-heat { font-size: 40px; }
+.dmg-x    { font-size: 22px; }
+.dmg-total { font-size: 64px; }
+
+/* --- 장전 연출: 탄창을 화면 앞으로 가져와 FILO 로 채운다 --- */
+.load-stage {
+  position: absolute; inset: 0; z-index: 16; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.load-mag {
+  position: relative;
+  width: 92px; border-radius: 8px 8px 5px 5px;
+  background: linear-gradient(180deg, #2a3038, #171b21);
+  border: 2px solid #3d4550;
+  box-shadow: 0 18px 44px rgba(0,0,0,.8);
+  display: flex; flex-direction: column-reverse; align-items: center;
+  padding: 8px 7px; gap: 4px;
+  transform: translateY(120%) scale(.8);
+}
+.load-slot {
+  width: 100%; height: 22px; border-radius: 3px;
+  background: #0c0f13; border: 1px solid #2b323b;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: var(--text-dim);
+}
+.load-slot.filled { border-color: var(--c, #6a7480); color: var(--c, var(--text)); }
+.load-round {
+  position: absolute; width: 78px; height: 22px; border-radius: 3px;
+  background: #10141a; border: 1px solid var(--c, #6a7480);
+  color: var(--c, var(--text));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800;
+  box-shadow: 0 0 12px rgba(0,0,0,.7);
+}
+.load-caption {
+  position: absolute; bottom: 18%; left: 0; right: 0; text-align: center;
+  font-size: 11px; color: var(--text-dim); letter-spacing: .1em;
+}
+
+/* --- 부착물 교체 시트 --- */
+.swap-list { display: flex; flex-direction: column; gap: 7px; }
+.swap-hint { font-size: 11px; color: var(--text-faint); }
+
+@media (max-height: 700px) {
+  :root { --h-ammo: 84px; --h-rack: 52px; --h-heat: 46px; --h-mag: 70px; }
+  .heat-num { font-size: 28px; }
+  .dmg-total { font-size: 52px; }
 }

@@ -17,6 +17,14 @@ import {
   showLoadout,
 } from './LoadoutSheet'
 
+/** 보유 특수탄 총 발수 — v2 에서 '가방'을 대신하는 지표 */
+function specialCount(l: { specials: Record<string, number> }): number {
+  let n = 0
+  for (const v of Object.values(l.specials)) n += v
+  return n
+}
+
+
 export function showDerelict(
   host: HTMLElement,
   run: RunState,
@@ -30,7 +38,7 @@ export function showDerelict(
   body.style.fontSize = '14px'
   body.style.lineHeight = '1.5'
 
-  const info = add(root, 'p', undefined, '탄피 ' + fmtInt(run.loadout.brass) + ' · 가방 ' + run.loadout.bag.length + '발')
+  const info = add(root, 'p', undefined, '탄피 ' + fmtInt(run.loadout.brass) + ' · 특수탄 ' + specialCount(run.loadout) + '발')
   info.style.fontSize = '11px'
   root.appendChild(loadoutStrip(run.loadout, bin))
 
@@ -77,7 +85,7 @@ export function showDerelict(
       t.style.color = 'var(--text)'
       t.style.fontSize = '13px'
       add(rb, 'div', 'pick-meta').textContent =
-        '탄피 ' + fmtInt(run.loadout.brass) + ' · 가방 ' + run.loadout.bag.length + '발'
+        '탄피 ' + fmtInt(run.loadout.brass) + ' · 특수탄 ' + specialCount(run.loadout) + '발'
 
       clear(row)
       const goBtn = button(row, '계속', { kind: 'primary', grow: 1 })

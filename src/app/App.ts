@@ -7,7 +7,8 @@
 //   3D 가 없어도(WebGL 실패·저사양) 전 흐름이 그대로 돈다 — scene 은 전부 옵셔널이다.
 // ============================================================================
 import type {
-  Ammo,
+  Round,
+  SlotKind,
   CombatState,
   DoorOption,
   EnemyInstance,
@@ -29,7 +30,7 @@ import {
   rollRewards,
   runRng,
 } from '../core/run'
-import { fire, eject, startCombat } from '../core/combat'
+import { fire, startCombat } from '../core/combat'
 import { combatBrass, skipRewardBrass } from '../core/economy'
 import { pickDerelict } from '../core/data/events'
 
@@ -44,7 +45,7 @@ import {
 } from '../ui/settings'
 import { toast } from '../ui/toast'
 import { add, el, on } from '../ui/dom'
-import { CombatView } from '../ui/CombatView'
+import { CombatView, showSwapSheet } from '../ui/CombatView'
 import { showTitle } from '../ui/screens/TitleScreen'
 import { showDoors } from '../ui/screens/DoorScreen'
 import { showRewards } from '../ui/screens/RewardScreen'
@@ -517,9 +518,8 @@ export class App {
     this.lastMove = { before: s.distance, cost: s.fireCost }
 
     const view = new CombatView(this.ui, {
-      onFire: (plan: Ammo[]) => void this.doFire(plan),
-      onEject: (uids: string[]) => void this.doEject(uids),
-      onOpenLoadout: () => void showLoadout(this.ui, run),
+      onFire: (plan: Round[]) => void this.doFire(plan),
+      onOpenRack: (slot, railIndex) => void this.openRack(slot, railIndex),
     })
     this.view = view
     view.render(s)
@@ -533,7 +533,7 @@ export class App {
       sc.fx.setVignette(BASE_VIGNETTE)
       sc.fx.setTint(1, 1, 1)
       sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id)
-      sc.enemy.setDistance(s.distance, view.distanceStart, false)
+      sc.enemy.setDistance(s.distance, enemy.startDist, false)
       sc.gun.resetHeat(s.heat)
     }
 
@@ -555,7 +555,6 @@ export class App {
 
     // 즉사
     run.status = 'dead'
-    run.stats.deaths += 1
     const cause = deathCause(this.lastMove.before, this.lastMove.cost)
     this.teardownCombat()
     await this.finish(run, false, cause)
@@ -574,7 +573,23 @@ export class App {
     }
   }
 
-  private async doFire(plan: Ammo[]): Promise<void> {
+  /**
+   * 전투 중 부착물 교체 — 사격 전이면 언제든 가능하다.
+   * 교체 후 파생값(용량·비용)이 바뀌므로 화면을 통째로 다시 그린다.
+   */
+  private async openRack(slot: SlotKind, railIndex?: number): Promise<void> {
+    const s = this.combat
+    const view = this.view
+    if (s === null || view === null || this.acting) return
+    const changed = await showSwapSheet(this.ui, s, slot, railIndex)
+    if (changed) {
+      view.render(s)
+      this.syncInsets()
+      toast('부착물을 교체했다')
+    }
+  }
+
+  private async doFire(plan: Round[]): Promise<void> {
     const s = this.combat
     const view = this.view
     if (s === null || view === null || this.acting) return
@@ -592,30 +607,6 @@ export class App {
     this.settle(s)
   }
 
-  private async doEject(uids: string[]): Promise<void> {
-    const s = this.combat
-    const view = this.view
-    if (s === null || view === null || this.acting) return
-    this.acting = true
-    this.audio.resume()
-    try {
-      const events = eject(s, uids)
-      if (events.length === 0) {
-        toast('배출할 탄이 없다')
-        view.setBusy(false)
-        return
-      }
-      this.lastMove = lastMoveOf(events)
-      await playEjectSequence(events, s, this.seqDeps(view))
-    } catch (e) {
-      console.error('[eject]', e)
-    } finally {
-      this.acting = false
-    }
-    this.settle(s)
-  }
-
-  /** 행동이 끝났다. 승/패면 전투 대기를 깨운다. */
   private settle(s: CombatState): void {
     if (this.combat !== s) return
     if (s.outcome === 'ongoing') return
@@ -651,7 +642,7 @@ export class App {
     if (res.pick !== null) {
       const item = items[res.pick]
       if (item !== undefined) {
-        const line = applyReward(run, item, res.railIndex)
+        const line = applyReward(run, item)
         toast(line)
       }
     } else {

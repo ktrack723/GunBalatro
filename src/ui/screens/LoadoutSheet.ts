@@ -4,9 +4,10 @@
 // (화면 프레임 / 버튼 / 로드아웃 스트립 / 레어도 뱃지 / 탄 아이콘)을 여기 모아 두었다.
 // 다른 화면들은 전부 이 파일에서 위젯을 가져다 쓴다.
 
-import type { Ammo, Attachment, Grade, Loadout, Rarity, RunState, SlotKind } from '../../core/types'
-import { ammoStats, gradeRoman, typeColor, typeName, typeShort } from '../../core/ammoStats'
-import { computeCap, computeTraySize } from '../../core/pipeline'
+import type { Attachment, Loadout, Rarity, RunState, SlotKind } from '../../core/types'
+import { computeCap } from '../../core/pipeline'
+import { SPECIAL_BY_ID } from '../../core/data/specials'
+import { BASIC_DMG, BASIC_HEAT, SLOT_LABEL } from '../../core/types'
 import { Bin, add, el, fmtInt, on } from '../dom'
 import { infoPop, isPopoverOpen } from '../popover'
 
@@ -121,6 +122,7 @@ const SLOT_NAME: Record<SlotKind, string> = {
   optic: '광학',
   stock: '개머리판',
   rail: '보조 레일',
+  magazine: '탄창',
 }
 
 const RARITY_NAME: Record<Rarity, string> = {
@@ -161,18 +163,23 @@ export function rarityDots(r: Rarity): string {
 }
 
 /** 탄 1발을 카드처럼 보여주는 .pick-icon (색맹 패턴을 위해 data-type 을 붙인다) */
-export function ammoIcon(a: Ammo): HTMLElement {
+export function specialIcon(id: string): HTMLElement {
+  const def = SPECIAL_BY_ID[id]
   const box = el('div', 'pick-icon')
-  box.dataset['type'] = a.type
-  box.style.setProperty('--c', typeColor(a.type))
-  const t = add(box, 'div', 'card-type', typeShort(a.type))
-  t.style.color = typeColor(a.type)
-  add(box, 'div', 'card-grade', gradeRoman(a.grade))
-  add(box, 'div', 'card-dmg', String(ammoStats(a).dmg))
+  const color = def?.color ?? '#8f9aa6'
+  box.style.borderColor = color
+  const t = add(box, 'div', 'card-type', def?.name.slice(0, 4) ?? '기본')
+  t.style.color = color
+  add(box, 'div', 'card-dmg', String(def?.dmg ?? BASIC_DMG))
   return box
 }
 
-/** 부착물 아이콘 (부위 글리프 + 레어도 색 테두리) */
+export function specialDesc(id: string): string {
+  const def = SPECIAL_BY_ID[id]
+  if (def === undefined) return '기본탄 — 수량 무한'
+  return def.text + ' (DMG ' + def.dmg + ' · HEAT +' + def.heat.toFixed(2) + ')'
+}
+
 export function attachmentIcon(a: Attachment): HTMLElement {
   const box = el('div', 'pick-icon')
   box.style.borderColor = RARITY_COLOR[a.rarity]
@@ -194,18 +201,47 @@ function slotGlyph(s: SlotKind): string {
       return '◎'
     case 'stock':
       return '◣'
+    case 'magazine':
+      return '▮'
     case 'rail':
       return '⋮'
   }
 }
 
-/** 탄 1발 설명 줄: "피해 58 · 온도 +0.10" */
-export function ammoDesc(a: Ammo): string {
-  const st = ammoStats(a)
-  const parts = ['피해 ' + fmtInt(st.dmg), '온도 +' + st.heat.toFixed(2)]
-  if (st.knockback > 0) parts.push('넉백 ' + st.knockback.toFixed(1) + 'm')
-  if (st.nextDmgBonus > 0) parts.push('다음 탄 +' + st.nextDmgBonus)
-  return parts.join(' · ')
+interface SlotRow {
+  label: string
+  att: Attachment | null
+  locked?: boolean
+}
+
+/** 랙과 같은 순서: 총열 → 덮개 → 광학 → 스톡 → 탄창 → 레일 */
+export function slotRows(l: Loadout): SlotRow[] {
+  const rows: SlotRow[] = [
+    { label: SLOT_LABEL.barrel, att: l.barrel },
+    { label: SLOT_LABEL.handguard, att: l.handguard },
+    { label: SLOT_LABEL.optic, att: l.optic },
+    { label: SLOT_LABEL.stock, att: l.stock },
+    { label: SLOT_LABEL.magazine, att: l.magazine },
+  ]
+  for (let i = 0; i < 2; i += 1) {
+    if (i < l.railSlots) rows.push({ label: '레일 ' + (i + 1), att: l.rails[i] ?? null })
+    else rows.push({ label: '레일 ' + (i + 1), att: null, locked: true })
+  }
+  return rows
+}
+
+/** 정적 보정을 사람이 읽는 한 줄로 */
+export function modsText(a: Attachment): string | null {
+  const m = a.mods
+  if (m === undefined) return null
+  const out: string[] = []
+  if (m.cap !== undefined) out.push('용량 ' + (m.cap > 0 ? '+' : '') + m.cap)
+  if (m.startDist !== undefined) out.push('시작 거리 ' + (m.startDist > 0 ? '+' : '') + m.startDist + 'm')
+  if (m.fireCost !== undefined) out.push('사격 비용 ' + (m.fireCost > 0 ? '+' : '') + m.fireCost + 'm')
+  if (m.enemySpeed !== undefined) out.push('적 속도 ' + (m.enemySpeed > 0 ? '+' : '') + m.enemySpeed)
+  if (m.railSlots !== undefined) out.push('레일 +' + m.railSlots)
+  if (m.startHeat !== undefined) out.push('시작 온도 +' + m.startHeat)
+  return out.length > 0 ? out.join(' · ') : null
 }
 
 // ===========================================================================
@@ -263,7 +299,7 @@ export function loadoutStrip(l: Loadout, bin?: Bin): HTMLElement {
   const mag = add(strip, 'div', 'att-chip')
   const md = add(mag, 'span', 'dot')
   md.style.background = '#c8a44d'
-  add(mag, 'span', undefined, l.magazine.name + ' (' + l.magazine.cap + ')')
+  add(mag, 'span', undefined, (l.magazine?.name ?? '없음') + ' (' + (l.magazine?.mag?.cap ?? 5) + ')')
   return strip
 }
 
@@ -282,146 +318,28 @@ export interface BagCounts {
 
 const TYPE_ORDER = ['AP', 'INC', 'HE', 'SANC'] as const
 
-export function bagCounts(bag: readonly Ammo[]): BagCounts {
-  const matrix: Record<string, number[]> = {}
-  const byType: Record<string, number> = {}
-  for (const t of TYPE_ORDER) {
-    matrix[t] = [0, 0, 0, 0, 0]
-    byType[t] = 0
+/** 보유 특수탄 목록 위젯 — v2 에서 '가방 히스토그램'을 대신한다 */
+export function specialsList(l: Loadout): HTMLElement {
+  const box = el('div', 'pick-grid')
+  const ids = Object.keys(l.specials).filter((k) => (l.specials[k] ?? 0) > 0).sort()
+  if (ids.length === 0) {
+    add(box, 'p', undefined, '보유한 특수탄이 없다. 기본탄은 언제나 무한하다.')
+    return box
   }
-  const byGrade = [0, 0, 0, 0, 0]
-  let gradeSum = 0
-  for (const a of bag) {
-    const row = matrix[a.type]
-    if (row === undefined) continue
-    row[a.grade - 1] += 1
-    byType[a.type] += 1
-    byGrade[a.grade - 1] += 1
-    gradeSum += a.grade
-  }
-  return {
-    total: bag.length,
-    matrix,
-    byType,
-    byGrade,
-    avgGrade: bag.length > 0 ? gradeSum / bag.length : 0,
-  }
-}
-
-/** 탄종 × 등급 히스토그램 표 */
-export function bagHistogram(bag: readonly Ammo[]): HTMLElement {
-  const c = bagCounts(bag)
-  const box = el('div')
-  box.style.border = '1px solid var(--line)'
-  box.style.borderRadius = '6px'
-  box.style.background = 'var(--bg-panel)'
-  box.style.padding = '8px'
-
-  const grid = add(box, 'div')
-  grid.style.display = 'grid'
-  grid.style.gridTemplateColumns = '58px repeat(5, 1fr) 34px'
-  grid.style.gap = '3px'
-  grid.style.fontSize = '11px'
-  grid.style.fontVariantNumeric = 'tabular-nums'
-
-  const head = (text: string): HTMLElement => {
-    const n = add(grid, 'div', undefined, text)
-    n.style.color = 'var(--text-faint)'
-    n.style.fontSize = '10px'
-    n.style.textAlign = 'center'
-    return n
-  }
-  head('탄종')
-  for (let g = 1 as Grade; g <= 5; g = (g + 1) as Grade) head(gradeRoman(g))
-  head('계')
-
-  const max = Math.max(1, ...Object.values(c.matrix).flat())
-  for (const t of TYPE_ORDER) {
-    const name = add(grid, 'div', undefined, typeName(t) + ' ' + t)
-    name.style.color = typeColor(t)
-    name.style.fontSize = '10px'
-    for (let i = 0; i < 5; i += 1) {
-      const n = c.matrix[t][i]
-      const cell = add(grid, 'div')
-      cell.style.position = 'relative'
-      cell.style.textAlign = 'center'
-      cell.style.borderRadius = '2px'
-      cell.style.background = n > 0 ? 'rgba(255,255,255,.05)' : 'transparent'
-      // 개수 비례 채움 (히스토그램)
-      if (n > 0) {
-        const bar = add(cell, 'div')
-        bar.style.position = 'absolute'
-        bar.style.left = '0'
-        bar.style.bottom = '0'
-        bar.style.right = '0'
-        bar.style.height = ((n / max) * 100).toFixed(0) + '%'
-        bar.style.background = typeColor(t)
-        bar.style.opacity = '.32'
-        bar.style.borderRadius = '2px'
-      }
-      const lab = add(cell, 'div', undefined, n > 0 ? String(n) : '·')
-      lab.style.position = 'relative'
-      lab.style.color = n > 0 ? 'var(--text)' : 'var(--text-faint)'
-    }
-    const sum = add(grid, 'div', undefined, String(c.byType[t]))
-    sum.style.textAlign = 'center'
-    sum.style.color = 'var(--text-dim)'
+  for (const id of ids) {
+    const def = SPECIAL_BY_ID[id]
+    if (def === undefined) continue
+    const row = add(box, 'div', 'pick')
+    row.appendChild(specialIcon(id))
+    const body = add(row, 'div', 'pick-body')
+    add(body, 'div', 'pick-name', def.name + ' ×' + (l.specials[id] ?? 0))
+    add(body, 'div', 'pick-text', def.text)
+    const meta = add(body, 'div', 'pick-meta')
+    meta.appendChild(rarityTag(def.rarity))
   }
   return box
 }
 
-// ===========================================================================
-// 부착물 시트 본체
-// ===========================================================================
-
-interface SlotRow {
-  label: string
-  att: Attachment | null
-  locked?: boolean
-}
-
-function slotRows(l: Loadout): SlotRow[] {
-  const rows: SlotRow[] = [
-    { label: SLOT_NAME.barrel, att: l.barrel },
-    { label: SLOT_NAME.handguard, att: l.handguard },
-    { label: SLOT_NAME.optic, att: l.optic },
-    { label: SLOT_NAME.stock, att: l.stock },
-  ]
-  // 레일은 항상 2칸을 보여준다. 열리지 않은 칸은 "잠김".
-  for (let i = 0; i < 2; i += 1) {
-    const open = i < l.railSlots
-    rows.push({
-      label: '보조 레일 ' + (i + 1),
-      att: open ? l.rails[i] ?? null : null,
-      locked: !open,
-    })
-  }
-  return rows
-}
-
-/** 정적 보정을 사람이 읽는 문장으로 */
-function modsText(a: Attachment): string | null {
-  const m = a.mods
-  if (m === undefined) return null
-  const out: string[] = []
-  if (m.tray !== undefined) out.push('트레이 ' + signed(m.tray))
-  if (m.cap !== undefined) out.push('탄창 ' + signed(m.cap))
-  if (m.startDist !== undefined) out.push('시작 거리 ' + signed(m.startDist) + 'm')
-  if (m.fireCost !== undefined) out.push('사격 비용 ' + signed(m.fireCost) + 'm')
-  if (m.ejectCost !== undefined) out.push('배출 비용 ' + signed(m.ejectCost) + 'm')
-  if (m.enemySpeed !== undefined) out.push('적 속도 ' + signed(m.enemySpeed))
-  if (m.railSlots !== undefined) out.push('보조 레일 ' + signed(m.railSlots) + '칸')
-  return out.length > 0 ? out.join(' · ') : null
-}
-
-function signed(n: number): string {
-  return n >= 0 ? '+' + n : String(n)
-}
-
-/**
- * 현재 장착 6칸 + 탄창 + 가방 구성. 읽기 전용이다.
- * 전투 중에도 열 수 있으므로 어떤 상태도 바꾸지 않는다.
- */
 export function showLoadout(host: HTMLElement, run: RunState): Promise<void> {
   const l = run.loadout
   const sc = openScreen(host, '장비 시트')
@@ -461,20 +379,21 @@ export function showLoadout(host: HTMLElement, run: RunState): Promise<void> {
   section(root, '탄창')
   const magRow = add(root, 'div', 'pick')
   const magIcon = add(magRow, 'div', 'pick-icon')
-  const magCap = add(magIcon, 'div', 'card-grade', String(l.magazine.cap))
+  const magCap = add(magIcon, 'div', 'card-grade', String((l.magazine?.mag?.cap ?? 5)))
   magCap.style.color = 'var(--brass)'
   add(magIcon, 'div', 'card-dmg', '발')
   const magBody = add(magRow, 'div', 'pick-body')
-  add(magBody, 'div', 'pick-name', l.magazine.name)
-  add(magBody, 'div', 'pick-text', l.magazine.text)
+  add(magBody, 'div', 'pick-name', (l.magazine?.name ?? '없음'))
+  add(magBody, 'div', 'pick-text', (l.magazine?.text ?? ''))
 
-  section(root, '가방 구성')
-  const counts = bagCounts(l.bag)
+  section(root, '특수탄')
   const nums = add(root, 'div')
-  statRow(nums, '총 탄 수', fmtInt(counts.total) + '발')
-  statRow(nums, '평균 등급', counts.avgGrade.toFixed(2))
-  statRow(nums, '트레이 / 탄창', computeTraySize(l) + ' / ' + computeCap(l))
-  root.appendChild(bagHistogram(l.bag))
+  let totalSp = 0
+  for (const v of Object.values(l.specials)) totalSp += v
+  statRow(nums, '보유 특수탄', fmtInt(totalSp) + '발')
+  statRow(nums, '기본탄', '무한 (DMG ' + BASIC_DMG + ' · HEAT +' + BASIC_HEAT.toFixed(2) + ')')
+  statRow(nums, '탄창 용량', String(computeCap(l)))
+  root.appendChild(specialsList(l))
 
   add(root, 'div', 'spacer')
   const row = buttonRow(root)

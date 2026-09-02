@@ -423,11 +423,11 @@ export const BASE_CAP = 5
 export const MAX_RAIL_SLOTS = 2
 
 export const HP_BASE = 400
-export const HP_GROWTH = 1.95
+export const HP_GROWTH = 1.62
 export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.63, boss: 2.5 } as const
 
-export const THREAT_HP_MUL: Record<Threat, number> = { 1: 1.0, 2: 1.25, 3: 2.15 }
+export const THREAT_HP_MUL: Record<Threat, number> = { 1: 1.0, 2: 1.25, 3: 3.1 }
 export const THREAT_SPEED_ADD: Record<Threat, number> = { 1: 0, 2: 1, 3: 3 }
 export const THREAT_BRASS: Record<Threat, number> = { 1: 0, 2: 15, 3: 35 }
 export const THREAT_REWARD_COUNT: Record<Threat, number> = { 1: 3, 2: 3, 3: 4 }

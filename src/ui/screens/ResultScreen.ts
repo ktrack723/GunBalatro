@@ -11,7 +11,7 @@ import { FINAL_SECTOR } from '../../core/run'
 import { add, fmtInt, on } from '../dom'
 import { clearRun, loadMeta, recordResult } from '../save'
 import {
-  bagHistogram,
+  specialsList,
   button,
   buttonRow,
   header,
@@ -20,6 +20,14 @@ import {
   section,
   statRow,
 } from './LoadoutSheet'
+
+/** 보유 특수탄 총 발수 — v2 에서 '가방'을 대신하는 지표 */
+function specialCount(l: { specials: Record<string, number> }): number {
+  let n = 0
+  for (const v of Object.values(l.specials)) n += v
+  return n
+}
+
 
 /**
  * 즉사 사인 문장. PRESENTATION §2.5 의 요구 표기를 그대로 만든다.
@@ -95,9 +103,9 @@ export function showResult(
   // --- 최종 빌드 ---
   section(root, '최종 빌드')
   root.appendChild(loadoutStrip(run.loadout, bin))
-  const magLine = add(root, 'p', undefined, run.loadout.magazine.name + ' — ' + run.loadout.magazine.text)
+  const mag = run.loadout.magazine
+  const magLine = add(root, 'p', undefined, mag === null ? '탄창 없음' : mag.name + ' — ' + mag.text)
   magLine.style.fontSize = '11px'
-  root.appendChild(bagHistogram(run.loadout.bag))
 
   // --- 메타 ---
   section(root, '기록')
