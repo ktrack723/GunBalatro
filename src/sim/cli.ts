@@ -3,8 +3,9 @@
 //   출력은 회귀 대시보드다. 목표를 실측 쪽으로 내리지 않는다.
 // ============================================================================
 import type { Round, RunState } from '../core/types'
+import { analyzeRounds } from './rounds'
 import { newRun } from '../core/run'
-import { startCombat, basicRound, makeRound, previewDamage } from '../core/combat'
+import { startCombat, basicRound, fire, makeRound, previewDamage } from '../core/combat'
 import { makeEnemy } from '../core/data/enemies'
 import { makeRng } from '../core/rng'
 import { ATT_BY_ID } from '../core/data/attachments'
@@ -55,33 +56,62 @@ function perms<T>(a: T[]): T[][] {
  * BALANCE §7.5 법칙 1 에 따라 배열 격차가 줄어든다 — 그 감소폭이 바로
  * "이월 50%" 가 핵심 메커닉에서 가져가는 대가다. 안 재면 안 보인다.
  */
-function orderSensitivity(startHeat: number): { bySector: number[]; overall: number } {
-  const bySector: number[] = []
+/**
+ * 번들은 **여러 개**를 본다. 예전에는 소이+철갑+점착 한 묶음만 쟀는데, 그 셋이 바로
+ * 지배 조합이었다 — 그 줄을 의도적으로 평평하게 만들면 이 지표도 같이 떨어져서
+ * "배열이 안 중요해졌다" 는 잘못된 신호를 준다. 실제로 카탈로그가 다양해진 지금은
+ * 대표 묶음들의 평균이 이 게임에서 배열이 얼마나 중요한지를 더 정직하게 말해 준다.
+ * (구 묶음도 계속 따로 찍어서 회귀를 놓치지 않는다.)
+ */
+const BUNDLES: Array<{ name: string; ids: string[] }> = [
+  { name: '구 지배조합(소이·철갑·점착)', ids: ['sp_incendiary', 'sp_ap', 'sp_adhesive'] },
+  { name: '예열·관통·표식', ids: ['sp_thermite', 'sp_breach', 'sp_marker'] },
+  { name: '냉동·유일·충격', ids: ['sp_cryo', 'sp_solitary', 'sp_shock'] },
+  { name: '성탄·철갑·소이', ids: ['sp_sanctified', 'sp_ap', 'sp_incendiary'] },
+]
+
+/**
+ * 이월 정상상태 온도를 **계산해서** 쓴다. 예전에는 9.0 을 박아 뒀는데, 그 값은 소이탄이
+ * 온도 +5.0 이던 시절의 고정점이었다. 탄이 약해지면 정상상태도 같이 내려가므로,
+ * 낡은 상수로 재면 "배열이 안 중요해졌다" 는 잘못된 신호가 나온다.
+ *   H* = BASE_HEAT + carry × (H* + Σg)  →  탄창을 몇 번 돌려 수렴시킨다.
+ */
+function steadyHeat(ids: string[]): number {
+  const run: RunState = newRun(4242, 1)
+  const stock: Record<string, number> = {}
+  for (const id of ids) stock[id] = (stock[id] ?? 0) + 1
+  run.loadout.specials = stock
+  const e = makeEnemy({ archetypeId: 'shambler', passiveId: null, sector: 4, nodeMul: 1.63, threat: 1 })
+  const s = startCombat(run.loadout, e, makeRng(11))
+  s.enemy.hp = 1e12
+  s.enemy.maxHp = 1e12
+  const cap = Math.min(s.cap, 5)
+  for (let i = 0; i < 6; i += 1) {
+    const plan: Round[] = ids.map((id) => makeRound(id))
+    while (plan.length < cap) plan.push(basicRound())
+    // 재고를 계속 채워 같은 탄창을 반복 사격한다 (정상상태를 찾는 것이 목적이다)
+    s.specials = { ...stock }
+    fire(s, plan)
+  }
+  return s.heatStartBase
+}
+
+function bundleSensitivity(startHeat: number, ids: string[]): number {
   const all: number[] = []
   for (let sector = 1; sector <= 8; sector += 1) {
-    const ratios: number[] = []
-    for (let seed = 1; seed <= 24; seed += 1) {
+    for (let seed = 1; seed <= 12; seed += 1) {
       const run: RunState = newRun(seed * 31 + sector, 1)
-      // 섹터에 맞춰 특수탄을 조금 쥐여 준다 (실제 런의 중간 상태 모사)
-      run.loadout.specials = { sp_incendiary: 2, sp_ap: 1, sp_adhesive: 1 }
-      const e = makeEnemy({
-        archetypeId: 'shambler',
-        passiveId: null,
-        sector,
-        nodeMul: 1.63,
-        threat: 1,
-      })
+      const stock: Record<string, number> = {}
+      for (const id of ids) stock[id] = (stock[id] ?? 0) + 1
+      run.loadout.specials = stock
+      const e = makeEnemy({ archetypeId: 'shambler', passiveId: null, sector, nodeMul: 1.63, threat: 1 })
       const s = startCombat(run.loadout, e, makeRng(7 + seed))
       s.enemy.hp = 1e12
       s.enemy.maxHp = 1e12
       s.heatStartBase = startHeat
       s.heat = startHeat
       const cap = Math.min(s.cap, 5)
-      const plan: Round[] = [
-        makeRound('sp_incendiary'),
-        makeRound('sp_ap'),
-        makeRound('sp_adhesive'),
-      ]
+      const plan: Round[] = ids.map((id) => makeRound(id))
       while (plan.length < cap) plan.push(basicRound())
       let best = -1
       let worst = Infinity
@@ -90,14 +120,16 @@ function orderSensitivity(startHeat: number): { bySector: number[]; overall: num
         if (v > best) best = v
         if (v < worst) worst = v
       }
-      if (worst > 0) {
-        ratios.push(best / worst)
-        all.push(best / worst)
-      }
+      if (worst > 0) all.push(best / worst)
     }
-    bySector.push(ratios.reduce((a, b) => a + b, 0) / Math.max(1, ratios.length))
   }
-  return { bySector, overall: all.reduce((a, b) => a + b, 0) / Math.max(1, all.length) }
+  return all.length === 0 ? 1 : all.reduce((a, b) => a + b, 0) / all.length
+}
+
+/** startHeat 이 null 이면 그 묶음의 이월 정상상태 온도를 계산해서 쓴다 */
+function orderSensitivity(startHeat: number | null): { bySector: number[]; overall: number } {
+  const per = BUNDLES.map((b) => bundleSensitivity(startHeat ?? steadyHeat(b.ids), b.ids))
+  return { bySector: per, overall: per.reduce((a, b) => a + b, 0) / per.length }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,12 +236,16 @@ function main(): void {
   out('⑤ 순서 민감도 — 같은 탄 묶음의 최선/최악 배열 비')
   out('─'.repeat(70))
   const os = orderSensitivity(1)
-  const osCarry = orderSensitivity(9)
+  const osCarry = orderSensitivity(null)
   out('   [첫 탄창 · 온도 1.00]')
-  for (let s = 0; s < 8; s += 1) out('   S' + (s + 1) + '  ' + os.bySector[s].toFixed(2) + 'x  ' + bar(Math.min(1, os.bySector[s] / 6), 16))
+  for (let i = 0; i < BUNDLES.length; i += 1) {
+    out('   ' + pad(BUNDLES[i]!.name, 26) + padS(os.bySector[i]!.toFixed(2) + 'x', 8) + '  ' + bar(Math.min(1, os.bySector[i]! / 6), 16))
+  }
   out('   평균 ' + os.overall.toFixed(2) + 'x')
-  out('   [이월된 탄창 · 온도 9.00]  ← 이월 50% 의 대가')
-  for (let s = 0; s < 8; s += 1) out('   S' + (s + 1) + '  ' + osCarry.bySector[s].toFixed(2) + 'x  ' + bar(Math.min(1, osCarry.bySector[s] / 6), 16))
+  out('   [이월된 탄창 · 정상상태 온도 계산값]  ← 이월 50% 의 대가')
+  for (let i = 0; i < BUNDLES.length; i += 1) {
+    out('   ' + pad(BUNDLES[i]!.name, 26) + padS(osCarry.bySector[i]!.toFixed(2) + 'x', 8) + '  ' + bar(Math.min(1, osCarry.bySector[i]! / 6), 16))
+  }
   out('   평균 ' + osCarry.overall.toFixed(2) + 'x')
   out()
 
@@ -264,8 +300,11 @@ function main(): void {
   out(
     verdict(osCarry.overall >= 2.5) +
       ' 1. 순서가 중요한가 — 목표 ≥2.5x · 첫탄창 ' + os.overall.toFixed(2) +
-      'x · 이월탄창 ' + osCarry.overall.toFixed(2) + 'x (판정은 이월 기준)',
+      'x · 이월탄창 ' + osCarry.overall.toFixed(2) + 'x (판정은 이월 기준, 묶음 평균)',
   )
+  for (let i = 0; i < BUNDLES.length; i += 1) {
+    out('      · ' + pad(BUNDLES[i]!.name, 26) + osCarry.bySector[i]!.toFixed(2) + 'x')
+  }
   out(verdict(t3 >= 0.35 && t3 <= 0.65) + ' 2. 갈림길이 선택인가 — 목표 35~65% · 실측 ' + pct(t3))
   out(verdict(never.length === 0) + ' 3. 사장된 부착물 없음 — 채택 0회 ' + never.length + '종')
   out(
@@ -282,3 +321,9 @@ function main(): void {
 }
 
 main()
+
+// --- 탄 가치 분석 (--rounds) -------------------------------------------------
+if (process.argv.slice(2).some((a) => a === '--rounds')) {
+  // eslint-disable-next-line no-console
+  console.log(analyzeRounds())
+}

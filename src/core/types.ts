@@ -338,6 +338,11 @@ export interface FireCtx extends CombatCtx {
   dmg: number
   /** 누적 온도 획득 (mutable, 덧셈만) */
   heatGain: number
+  /**
+   * 같은 특수탄을 이번 탄창에 겹쳤을 때의 배수 (1 → 0.68 → 0.45).
+   * 탄이 **스스로** 얹는 몫에만 건다 — specials 의 amp() 가 이 값을 곱한다.
+   */
+  repeat: number
   triggered: string[]
 }
 
@@ -473,11 +478,11 @@ export const BASE_HEAT = 1.0
  * 그 반대 추로 **저온일수록 강해지는 탄**을 두어, 온도를 올릴지 낮게 유지할지
  * 자체가 선택이 되게 했다.
  */
-export const BASE_HEAT_CARRY = 0.5
+export const BASE_HEAT_CARRY = 0.26
 export const BASE_CAP = 5
 export const MAX_RAIL_SLOTS = 2
 
-export const HP_BASE = 308
+export const HP_BASE = 242
 export const HP_GROWTH = 1.91
 export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.8, boss: 2.2 } as const

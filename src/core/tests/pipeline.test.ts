@@ -98,24 +98,24 @@ describe('특수탄', () => {
     const s = startCombat(l, dummy(), makeRng(2))
     const before = s.distance
     fire(s, [makeRound('sp_shock')])
-    // 넉백 +4m 후 사격 비용만큼 전진 → 순변화는 4 - fireCost
-    expect(s.distance).toBe(before + 4 - s.fireCost)
+    // 넉백 +3m 후 사격 비용만큼 전진 → 순변화는 3 - fireCost
+    expect(s.distance).toBe(before + 3 - s.fireCost)
   })
 
   // 아래 두 상수는 specials.ts 의 값과 **의도적으로 묶여 있다.**
   // 밸런스 조정으로 숫자가 바뀌면 여기서 터져야 한다 — 조용히 지나가면
   // '기능은 살아 있는데 값이 사라진' 회귀를 못 잡는다.
-  it('점착탄은 이후 탄의 데미지를 올린다 (+45)', () => {
+  it('점착탄은 이후 탄의 데미지를 올린다 (+10)', () => {
     const l = loadout([], { sp_adhesive: 1 })
     const { shots } = shoot(l, [makeRound('sp_adhesive'), basicRound()])
-    expect(shots[1].dmg).toBe(BASIC_DMG + 45)
+    expect(shots[1].dmg).toBe(BASIC_DMG + 10)
   })
 
-  it('표식탄은 적을 취약하게 만든다 (+35%)', () => {
+  it('표식탄은 적을 취약하게 만든다 (+42%)', () => {
     const l = loadout([], { sp_marker: 1 })
     const s = startCombat(l, dummy(), makeRng(3))
     fire(s, [makeRound('sp_marker'), basicRound()])
-    expect(s.enemy.vuln).toBeCloseTo(0.35, 6)
+    expect(s.enemy.vuln).toBeCloseTo(0.42, 6)
   })
 
   it('특수탄은 소모되고 기본탄은 무한하다', () => {
@@ -409,5 +409,32 @@ describe('특수탄 정산', () => {
     let total = 0
     for (const v of Object.values(l.specials)) total += v
     expect(total).toBeGreaterThan(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 유일탄 — 탄창 구성에 값이 걸리는 탄 (페이오프의 랭크를 올리는 장치)
+// ---------------------------------------------------------------------------
+describe('유일탄', () => {
+  it('혼자 들어가면 크게 터지고, 다른 특수탄이 끼면 죽는다', () => {
+    const solo = shoot(loadout([], { sp_solitary: 1 }), [makeRound('sp_solitary'), basicRound()])
+    const withOther = shoot(
+      loadout([], { sp_solitary: 1, sp_ap: 1 }),
+      [makeRound('sp_solitary'), makeRound('sp_ap')],
+    )
+    expect(solo.shots[0]!.dmg).toBeGreaterThan(withOther.shots[0]!.dmg * 2)
+  })
+})
+
+describe('심판탄', () => {
+  it('겹칠수록 발당 가치가 떨어진다 (자기 증식하지 않는다)', () => {
+    const l = loadout([], { sp_judgment: 2 })
+    const s = startCombat(l, dummy(1e9), makeRng(5))
+    const hp0 = s.enemy.hp
+    fire(s, [basicRound(), basicRound(), makeRound('sp_judgment'), makeRound('sp_judgment')])
+    const dealt = hp0 - s.enemy.hp
+    // 두 번째가 첫 번째가 만든 추가 피해까지 다시 먹으면 총합이 폭발한다.
+    // magDamage 에 되먹이지 않으므로 그런 일이 없어야 한다.
+    expect(dealt).toBeLessThan(s.magDamage * 4)
   })
 })

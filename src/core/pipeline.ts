@@ -106,6 +106,10 @@ function safe(fn: (() => void) | undefined, label: string): void {
  * 건드리지 않는다 (그건 그 부착물의 값이다).
  */
 const REPEAT_MUL = [1, 0.68, 0.45] as const
+// 힘이 def.dmg/def.heat 이 아니라 **훅**에 들어 있는 탄(냉동·심판·방열·표식…)은
+// 이 배수를 스스로 곱해야 한다 — specials 의 amp() 가 ctx.repeat 으로 그 일을 한다.
+// 안 그러면 규칙이 통째로 비껴간다: 실측 냉동탄 1발 15.3 / 3발 14.8(안 줄고),
+// 심판탄 4.7 → 6.0 (겹칠수록 **올라갔다**).
 
 function repeatMul(s: CombatState, def: { id: string } | null): number {
   if (def === null) return 1
@@ -137,6 +141,7 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
     heatBefore: s.heat,
     dmg,
     heatGain,
+    repeat: rep,
     triggered: [],
   }
 
