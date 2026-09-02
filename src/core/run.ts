@@ -357,7 +357,7 @@ export function armoryStock(run: RunState): ArmoryEntry[] {
       kind: 'rail',
       price: shopPrice(PRICES.rail[run.loadout.railSlots] ?? 220, run.stake),
       label: '보조 레일 확장',
-      sub: '부착물을 하나 더 달 수 있다',
+      sub: '광학을 하나 더 달 수 있다 (레일 자체엔 효과 없음)',
     })
   }
   out.push({
@@ -387,7 +387,7 @@ export function reliquaryStock(run: RunState): ArmoryEntry[] {
       kind: 'rail',
       price: shopPrice(PRICES.rail[run.loadout.railSlots] ?? 220, run.stake),
       label: '보조 레일 확장',
-      sub: '부착물을 하나 더 달 수 있다',
+      sub: '광학을 하나 더 달 수 있다 (레일 자체엔 효과 없음)',
     })
   }
   return out

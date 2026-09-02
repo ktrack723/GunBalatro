@@ -155,11 +155,11 @@ const DEVOUR: EnemyPassive = {
   },
 }
 
-/** 부착물 축 봉쇄 — 레일 조합 빌드에만 아프다 */
+/** 부착물 축 봉쇄 — 광학을 여러 개 겹친 빌드에만 아프다 */
 const JAMMING: EnemyPassive = {
   id: 'jamming',
   name: '교란',
-  text: '이번 전투 동안 보조 레일 부착물이 작동하지 않는다',
+  text: '이번 전투 동안 보조 레일에 단 광학이 작동하지 않는다',
   onCombatStart: (c) => {
     const railIds = new Set(c.s.loadout.rails.filter((r) => r !== null).map((r) => r!.id))
     if (railIds.size === 0) return

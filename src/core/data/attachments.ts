@@ -337,7 +337,7 @@ export const ATTACHMENTS: Attachment[] = [
     name: '성유물 거치대',
     slot: 'stock',
     rarity: 'rare',
-    text: '보조 레일 +1',
+    text: '보조 광학 칸 +1 (광학을 하나 더 단다)',
     mods: { railSlots: 1 },
   },
   {
@@ -448,12 +448,14 @@ export const ATTACHMENTS: Attachment[] = [
   },
 
   // =========================================================================
-  // 보조 레일 (Rail) — 조건·콤보 축. 하드포인트 사이를 잇는 "만약(if)".
+  // 광학 — 조건·콤보 축 (구 '보조 레일' 부착물).
+  //   보조 레일은 이제 **효과 없는 추가 광학 칸**이므로, 조건·콤보 부착물은
+  //   전부 광학 부위로 옮겼다. 광학은 하드포인트 1 + 레일 최대 2 = 최대 3중첩된다.
   // =========================================================================
   {
     id: 'rl_holywater',
     name: '성수 앰플',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'common',
     text: '탄창의 마지막 탄 HEAT +1.8',
     hooks: { onFire: (c) => { if (c.isLast) { c.heatGain += 1.8; proc(c) } } },
@@ -461,7 +463,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_ledger',
     name: '전리품 장부',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'common',
     text: '사격을 마칠 때마다 탄피 +8',
     hooks: {
@@ -474,7 +476,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_trinity',
     name: '삼위일체 각인',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'uncommon',
     text: '탄창에 특수탄 3발 이상이면 모든 탄 HEAT +1.6',
     hooks: { onFire: (c) => { if (specialsInMag(c) >= 3) { c.heatGain += 1.6; proc(c) } } },
@@ -482,7 +484,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_pact',
     name: '피의 계약',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'uncommon',
     text: '발사 전 온도 15 초과면 DMG +130',
     hooks: { onFire: (c) => { if (c.heatBefore > 15) { c.dmg += 130; proc(c) } } },
@@ -490,7 +492,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_gambler',
     name: '도박꾼의 성구',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'uncommon',
     text: '매 발사 50%로 DMG +170, 50%로 −40',
     hooks: {
@@ -504,7 +506,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_deathrite',
     name: '죽음의 성사',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'rare',
     text: '마지막 탄이 특수탄이면 그 탄 HEAT +14',
     hooks: {
@@ -518,7 +520,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_unstable',
     name: '불안정 노심',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'rare',
     text: '모든 탄 HEAT +4.5. 온도 26 초과 시 사격 즉시 종료',
     hooks: {
@@ -561,7 +563,7 @@ export const ATTACHMENTS: Attachment[] = [
   {
     id: 'rl_relicbones',
     name: '성인의 유해',
-    slot: 'rail',
+    slot: 'optic',
     rarity: 'relic',
     text: '이번 런에서 획득한 부착물 수 ×16 만큼 DMG +',
     hooks: {

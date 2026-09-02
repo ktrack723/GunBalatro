@@ -204,7 +204,7 @@ function slotGlyph(s: SlotKind): string {
     case 'magazine':
       return '▮'
     case 'rail':
-      return '⋮'
+      return '◎'
   }
 }
 

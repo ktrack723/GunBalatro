@@ -14,7 +14,7 @@ import type {
   Rng,
   Round,
 } from './types'
-import { BASE_HEAT } from './types'
+import { BASE_HEAT, RAIL_ACCEPTS } from './types'
 import { makeRng } from './rng'
 import {
   computeCap,
@@ -124,17 +124,18 @@ export function swapAttachment(s: CombatState, id: string, railIndex?: number): 
   const next = l.stash[idx]
 
   let removed: import('./types').Attachment | null = null
-  if (next.slot === 'rail') {
+  // 보조 레일 칸은 railIndex 로 지정된다. 레일에는 광학만 들어간다.
+  if (railIndex !== undefined) {
     const slots = l.rails
-    if (slots.length === 0) return false
-    const at = railIndex !== undefined && railIndex >= 0 && railIndex < slots.length
-      ? railIndex
-      : Math.max(0, slots.findIndex((r) => r === null))
-    removed = slots[at] ?? null
-    slots[at] = next
+    if (next.slot !== RAIL_ACCEPTS) return false
+    if (railIndex < 0 || railIndex >= slots.length) return false
+    removed = slots[railIndex] ?? null
+    slots[railIndex] = next
   } else {
-    removed = l[next.slot]
-    l[next.slot] = next
+    if (next.slot === 'rail') return false // 레일은 자리이지 부위가 아니다
+    const hp = next.slot
+    removed = l[hp]
+    l[hp] = next
   }
 
   l.stash.splice(idx, 1)

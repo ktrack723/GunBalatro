@@ -7,7 +7,7 @@
 //   "지금 내 총이 무엇인가"가 항상 보여야 한다. 사격 전이면 탭해서 교체할 수 있다.
 // ============================================================================
 import type { Attachment, CombatState, Round, SlotKind } from '../core/types'
-import { BASIC_DMG, BASIC_HEAT, SLOT_LABEL } from '../core/types'
+import { BASIC_DMG, BASIC_HEAT, RAIL_ACCEPTS, SLOT_LABEL } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import { basicRound, makeRound, swapAttachment } from '../core/combat'
 import { computeHeatCarry } from '../core/pipeline'
@@ -459,8 +459,11 @@ export async function showSwapSheet(
   railIndex?: number,
 ): Promise<boolean> {
   const l = s.loadout
-  const current = slot === 'rail' ? (l.rails[railIndex ?? 0] ?? null) : l[slot as 'barrel']
-  const options = l.stash.filter((a) => a.slot === slot)
+  const isRail = slot === 'rail'
+  const current = isRail ? (l.rails[railIndex ?? 0] ?? null) : l[slot as 'barrel']
+  // 보조 레일 칸은 그 자체로는 아무 효과가 없다 — 광학을 하나 더 다는 자리일 뿐이다.
+  const accepts: SlotKind = isRail ? RAIL_ACCEPTS : slot
+  const options = l.stash.filter((a) => a.slot === accepts)
 
   const screen = el('div', 'screen')
   host.appendChild(screen)
@@ -471,7 +474,14 @@ export async function showSwapSheet(
     undefined,
     current === null ? '비어 있다.' : '현재: ' + current.name + ' — ' + current.text,
   )
-  add(screen, 'div', 'swap-hint', '사격 전이면 언제든 바꿀 수 있다. 벗은 것은 보관함으로 간다.')
+  add(
+    screen,
+    'div',
+    'swap-hint',
+    isRail
+      ? '보조 레일은 그 자체로는 효과가 없다 — 광학을 하나 더 다는 자리다. 사격 전이면 언제든 바꿀 수 있다.'
+      : '사격 전이면 언제든 바꿀 수 있다. 벗은 것은 보관함으로 간다.',
+  )
 
   const list = add(screen, 'div', 'swap-list')
   let changed = false
@@ -482,12 +492,12 @@ export async function showSwapSheet(
       resolve()
     }
     if (options.length === 0) {
-      add(list, 'p', undefined, '보관함에 이 부위의 부착물이 없다.')
+      add(list, 'p', undefined, isRail ? '보관함에 여분의 광학이 없다.' : '보관함에 이 부위의 부착물이 없다.')
     }
     for (const a of options) {
       const pick = add(list, 'div', 'pick')
       const icon = add(pick, 'div', 'pick-icon')
-      add(icon, 'div', 'rack-kind', SLOT_LABEL[a.slot])
+      add(icon, 'div', 'rack-kind', SLOT_LABEL[slot])
       const body = add(pick, 'div', 'pick-body')
       add(body, 'div', 'pick-name', a.name)
       add(body, 'div', 'pick-text', a.text)

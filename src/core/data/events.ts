@@ -5,7 +5,7 @@
 //   v2 의 자원 축: 탄피 / 특수탄 / 부착물 / 레일 슬롯 / 거리
 // ============================================================================
 import type { Attachment, DerelictEvent, Rarity, Rng, RunState, SlotKind } from '../types'
-import { HARDPOINTS, MAX_RAIL_SLOTS } from '../types'
+import { HARDPOINTS, MAX_RAIL_SLOTS, RAIL_ACCEPTS } from '../types'
 import { ATTACHMENTS, pickAttachment } from './attachments'
 import { SPECIALS, SPECIAL_BY_ID } from './specials'
 
@@ -24,15 +24,25 @@ function equippedIds(run: RunState): Set<string> {
 export function equip(run: RunState, a: Attachment): string {
   const l = run.loadout
   run.attachmentsTaken += 1
-  if (a.slot === 'rail') {
+
+  // 광학은 하드포인트 1칸 + 보조 레일 칸을 함께 쓴다.
+  // 빈 칸이 있으면 거기부터 채운다 — 멀쩡한 광학을 밀어내지 않기 위해서다.
+  if (a.slot === RAIL_ACCEPTS) {
+    if (l.optic === null) {
+      l.optic = a
+      return a.name + ' 을(를) 장착했다.'
+    }
     const at = l.rails.findIndex((r) => r === null)
     if (at >= 0) {
       l.rails[at] = a
-      return a.name + ' 을(를) 보조 레일에 달았다.'
+      return a.name + ' 을(를) 보조 레일 ' + (at + 1) + '번 칸에 달았다.'
     }
-    l.stash.push(a)
-    return a.name + ' — 레일이 꽉 차 보관함에 넣었다.'
+    const cur = l.optic
+    l.optic = a
+    l.stash.push(cur)
+    return a.name + ' 로 교체했다. (' + cur.name + ' 은 보관함으로)'
   }
+
   const hp = a.slot as Hardpoint
   const cur = l[hp]
   l[hp] = a

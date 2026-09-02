@@ -4,7 +4,7 @@
 // ============================================================================
 import { describe, expect, it } from 'vitest'
 import type { Attachment, EnemyInstance, Loadout, Round } from '../types'
-import { BASIC_DMG, BASIC_HEAT, HP_BASE, HP_GROWTH, NODE_MUL } from '../types'
+import { BASIC_DMG, BASIC_HEAT, HP_BASE, HP_GROWTH, NODE_MUL, RAIL_ACCEPTS } from '../types'
 import { makeRng } from '../rng'
 import { ATTACHMENTS, ATT_BY_ID, STARTER_MAGAZINE } from '../data/attachments'
 import { SPECIALS, SPECIAL_BY_ID } from '../data/specials'
@@ -28,7 +28,7 @@ function loadout(ids: string[] = [], specials: Record<string, number> = {}): Loa
   for (const id of ids) {
     const a = ATT_BY_ID[id]
     if (a === undefined) continue
-    if (a.slot === 'rail') {
+    if (a.slot === RAIL_ACCEPTS && l.optic !== null) {
       const at = l.rails.findIndex((r) => r === null)
       if (at >= 0) l.rails[at] = a
     } else {
@@ -169,9 +169,17 @@ describe('콘텐츠 무결성', () => {
   })
 
   it('모든 부위에 부착물이 존재한다', () => {
-    for (const slot of ['barrel', 'handguard', 'optic', 'stock', 'magazine', 'rail']) {
+    for (const slot of ['barrel', 'handguard', 'optic', 'stock', 'magazine']) {
       expect(ATTACHMENTS.filter((a) => a.slot === slot).length).toBeGreaterThan(0)
     }
+  })
+
+  it("보조 레일은 자리일 뿐이므로 slot:'rail' 부착물은 존재하지 않는다", () => {
+    expect(ATTACHMENTS.filter((a) => a.slot === 'rail')).toHaveLength(0)
+  })
+
+  it('보조 레일에는 광학만 들어간다', () => {
+    expect(RAIL_ACCEPTS).toBe('optic')
   })
 
   it('탄창 부위 부착물은 전부 mag 규칙을 갖는다', () => {

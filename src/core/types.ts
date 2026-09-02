@@ -94,7 +94,17 @@ export const BASIC_HEAT = 0.55
  * 부위. **같은 부위는 하나만 장착한다** — 총 한 자루에 총열은 하나다.
  * 물리적 직관이 곧 규칙이라 학습 비용이 0이다.
  */
+/**
+ * 부위.
+ *   'rail' 은 **부착물의 종류가 아니라 자리(슬롯)** 다.
+ *   보조 레일 자체에는 아무 효과가 없다 — 광학을 하나 더 달 수 있게 해줄 뿐이다.
+ *   그래서 `Attachment.slot` 이 'rail' 인 부착물은 존재하지 않는다 (테스트가 강제한다).
+ *   레일 칸에는 RAIL_ACCEPTS 부위의 부착물만 들어간다.
+ */
 export type SlotKind = 'barrel' | 'handguard' | 'optic' | 'stock' | 'magazine' | 'rail'
+
+/** 보조 레일 칸이 받아들이는 부위 — 광학 전용 */
+export const RAIL_ACCEPTS: SlotKind = 'optic'
 
 export const HARDPOINTS: readonly SlotKind[] = [
   'barrel',
@@ -110,7 +120,7 @@ export const SLOT_LABEL: Record<SlotKind, string> = {
   optic: '광학',
   stock: '개머리판',
   magazine: '탄창',
-  rail: '레일',
+  rail: '보조 광학',
 }
 
 /** 전투 밖에서도 상시 적용되는 정적 보정 */
@@ -123,7 +133,7 @@ export interface StaticMods {
   fireCost?: number
   /** 적 접근 속도 증감 (음수가 이득, 최소 2로 클램프) */
   enemySpeed?: number
-  /** 보조 레일 슬롯 증감 */
+  /** 보조 레일 슬롯 증감 — 칸만 늘린다. 레일 자체에는 효과가 없다 */
   railSlots?: number
   /** 사격 시작 온도 증감 — BALANCE R6: 탄창 부위와 유물만 허용 */
   startHeat?: number
@@ -224,7 +234,7 @@ export interface Loadout {
   stock: Attachment | null
   /** 탄창도 하나의 부위다 */
   magazine: Attachment | null
-  /** 길이 == railSlots. 빈 칸은 null */
+  /** 보조 레일 칸. 길이 == railSlots, 빈 칸은 null. **광학만 들어간다** */
   rails: (Attachment | null)[]
   railSlots: number
   /** 보유 중이지만 장착하지 않은 부착물 (전투 중 교체용) */
