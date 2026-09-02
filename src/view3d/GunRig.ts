@@ -15,12 +15,18 @@ interface HeatStage {
   color: number
   emis: number
 }
+/**
+ * emis 값은 **형태가 읽히는 선까지만** 올린다.
+ * 예전 값(1.6 / 2.6)은 뷰모델 조명과 겹쳐 톤매핑에서 포화돼, 백열 이상에서
+ * 총이 음영 없는 노란 덩어리로 뭉개졌다. 온도 정보는 색이 나르게 하고
+ * 발광은 실루엣을 지우지 않을 만큼만 준다.
+ */
 export const HEAT_STAGES: readonly HeatStage[] = [
   { min: 1.0, name: 'COLD', color: 0x6b6f74, emis: 0.0 },
-  { min: 3.0, name: 'WARM', color: 0x7a2c10, emis: 0.25 },
-  { min: 8.0, name: 'HOT', color: 0xff6a12, emis: 0.85 },
-  { min: 16.0, name: 'SEARING', color: 0xffc44d, emis: 1.6 },
-  { min: 30.0, name: 'SANCTIFIED', color: 0xfff6e0, emis: 2.6 },
+  { min: 3.0, name: 'WARM', color: 0x7a2c10, emis: 0.20 },
+  { min: 8.0, name: 'HOT', color: 0xff6a12, emis: 0.58 },
+  { min: 16.0, name: 'SEARING', color: 0xffc44d, emis: 0.98 },
+  { min: 30.0, name: 'SANCTIFIED', color: 0xfff6e0, emis: 1.55 },
 ]
 
 export function heatStageIndex(heat: number): number {
@@ -395,8 +401,11 @@ export class GunRig {
     this.heatShown += (this.heat - this.heatShown) * Math.min(1, d * 6)
     this.stagePulse *= Math.exp(-d / 0.13)
     this.applyHeatMaterial(this.heatShown, this.stagePulse)
-    // 적열(8) 이상에서 화면 가장자리 아지랑이 (§2.2 t=250). 시퀀서가 덮어써도 무방
-    this.fx.heatDistortion(THREE.MathUtils.clamp((this.heatShown - 8) / 22, 0, 1))
+    // 아지랑이. 시작점을 8 → 12 로, 폭을 22 → 30 으로 늘렸다.
+    //   적이 검은색이 된 뒤로는 화면 흐림이 곧 "적이 안 보임" 이다. 중간 온도(17 근처)
+    //   에서 0.41 이나 걸려 복도와 적이 통째로 뿌옇게 지워지고 있었다.
+    //   극단적인 온도에서만 강하게 걸리도록 곡선을 뒤로 밀었다.
+    this.fx.heatDistortion(THREE.MathUtils.clamp((this.heatShown - 12) / 30, 0, 1))
 
     // --- 자세 (전투 / 이동) ---
     const targetRx = this.lowered ? 0.55 : 0
@@ -616,7 +625,7 @@ export class GunRig {
     // 성화 단계: 총 전체가 발광
     const fullGlow = THREE.MathUtils.clamp((heat - 26) / 12, 0, 1)
     this.steelMat.emissive.copy(this.emisColor)
-    this.steelMat.emissiveIntensity = fullGlow * 0.55 + pulse * 0.25
+    this.steelMat.emissiveIntensity = fullGlow * 0.38 + pulse * 0.22
 
     // 볼륨 글로우 (백열 이상)
     const g = THREE.MathUtils.clamp((heat - 13) / 10, 0, 1)
