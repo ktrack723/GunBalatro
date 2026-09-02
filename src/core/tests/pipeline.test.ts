@@ -9,7 +9,7 @@ import { makeRng } from '../rng'
 import { ATTACHMENTS, ATT_BY_ID, STARTER_MAGAZINE } from '../data/attachments'
 import { SPECIALS, SPECIAL_BY_ID } from '../data/specials'
 import { ARCHETYPES, PASSIVES, baseHp, makeEnemy } from '../data/enemies'
-import { basicRound, fire, makeRound, previewDamage, startCombat } from '../combat'
+import { basicRound, fire, makeRound, previewDamage, settleSpecials, startCombat } from '../combat'
 import { computeCap } from '../pipeline'
 
 function loadout(ids: string[] = [], specials: Record<string, number> = {}): Loadout {
@@ -375,5 +375,39 @@ describe('반복 감쇠', () => {
     const r = shoot(loadout(), [basicRound(), basicRound(), basicRound()])
     expect(r.shots[0]!.dmg).toBe(r.shots[1]!.dmg)
     expect(r.shots[1]!.dmg).toBe(r.shots[2]!.dmg)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 전투 결과가 장비에 반영되는가 — 없으면 특수탄이 무한이 된다
+// ---------------------------------------------------------------------------
+describe('특수탄 정산', () => {
+  it('전투에서 쓴 만큼 장비의 특수탄이 줄어든다', () => {
+    const l = loadout([], { sp_ap: 3, sp_incendiary: 2 })
+    const s = startCombat(l, dummy(), makeRng(1))
+    fire(s, [makeRound('sp_ap'), makeRound('sp_incendiary'), basicRound()])
+    // 전투 중에는 사본만 줄어든다 (장비는 아직 그대로)
+    expect(l.specials['sp_ap']).toBe(3)
+    settleSpecials(l, s)
+    expect(l.specials['sp_ap']).toBe(2)
+    expect(l.specials['sp_incendiary']).toBe(1)
+  })
+
+  it('미리보기는 특수탄을 소모하지 않는다', () => {
+    const l = loadout([], { sp_ap: 2 })
+    const s = startCombat(l, dummy(), makeRng(1))
+    previewDamage(s, [makeRound('sp_ap'), makeRound('sp_ap')])
+    settleSpecials(l, s)
+    expect(l.specials['sp_ap']).toBe(2)
+  })
+
+  it('전투 중 보급(탄띠 걸이)은 정산에서 남는다', () => {
+    const l = loadout(['st_bandolier'], { sp_ap: 1 })
+    const s = startCombat(l, dummy(), makeRng(1))
+    fire(s, [basicRound()])
+    settleSpecials(l, s)
+    let total = 0
+    for (const v of Object.values(l.specials)) total += v
+    expect(total).toBeGreaterThan(1)
   })
 })

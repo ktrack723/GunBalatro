@@ -330,6 +330,19 @@ export function cloneState(s: CombatState): CombatState {
   }
 }
 
+/**
+ * 전투가 끝나면 **소모한 특수탄을 장비에 반영한다.**
+ *
+ * startCombat 이 `specials: { ...loadout.specials }` 로 사본을 뜨기 때문에, 전투 중의
+ * 소모는 그 사본에만 남는다. 호출부가 이걸 되돌려 쓰지 않으면 특수탄이 **영원히 줄지 않는다** —
+ * 실제로 앱은 이 write-back 이 아예 없어서 소이탄이 무한이었다(시뮬레이터에만 있었다.
+ * 그래서 모든 밸런스 수치가 실제 게임보다 빡빡한 쪽으로 어긋나 있었다).
+ * 보급(탄띠 걸이 등)도 같은 경로로 들어오므로 증가분 역시 여기서 남는다.
+ */
+export function settleSpecials(loadout: Loadout, s: CombatState): void {
+  loadout.specials = { ...s.specials }
+}
+
 export function checkOutcome(s: CombatState): 'ongoing' | 'win' | 'lose' {
   if (s.enemy.hp <= 0) return 'win'
   if (s.distance <= 0) return 'lose'

@@ -29,7 +29,7 @@ import {
   rollRewardRoom,
   runRng,
 } from '../core/run'
-import { fire, startCombat } from '../core/combat'
+import { fire, settleSpecials, startCombat } from '../core/combat'
 import { combatBrass } from '../core/economy'
 import { pickDerelict } from '../core/data/events'
 
@@ -555,7 +555,7 @@ export class App {
       this.endCombat = resolve
     })
     this.endCombat = null
-    this.absorbStats(run, s)
+    this.absorbCombat(run, s)
 
     if (outcome === 'win') {
       // 탄피는 자동으로 들어오지 않는다 — 보상방에서 직접 집는다 (claimBrass)
@@ -629,10 +629,12 @@ export class App {
     if (done !== null) done(s.outcome === 'win' ? 'win' : 'lose')
   }
 
-  private absorbStats(run: RunState, s: CombatState): void {
+  /** 전투 결과를 런에 흡수한다 — 통계 + **소모한 특수탄** (없으면 특수탄이 무한이 된다) */
+  private absorbCombat(run: RunState, s: CombatState): void {
     run.stats.shotsFired += s.shotsFired
     run.stats.totalDamage += s.totalDamage
     if (s.peakHeat > run.stats.peakHeat) run.stats.peakHeat = s.peakHeat
+    settleSpecials(run.loadout, s)
   }
 
   private teardownCombat(): void {

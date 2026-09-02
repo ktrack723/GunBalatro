@@ -7,7 +7,7 @@ import type { Attachment, FireEvent, RunState, Threat } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import { ATT_BY_ID } from '../core/data/attachments'
 import { makeRng } from '../core/rng'
-import { fire, startCombat } from '../core/combat'
+import { fire, settleSpecials, startCombat } from '../core/combat'
 import { computeFireCost } from '../core/pipeline'
 import { combatBrass } from '../core/economy'
 import {
@@ -501,7 +501,7 @@ export function simulateRun(
       run.stats.shotsFired += s.shotsFired
       run.stats.totalDamage += s.totalDamage
       if (s.peakHeat > peak) peak = s.peakHeat
-      run.loadout.specials = { ...s.specials }
+      settleSpecials(run.loadout, s)
       tel?.magsPerCombat.push(s.magsFired)
 
       if (!res.win) {
