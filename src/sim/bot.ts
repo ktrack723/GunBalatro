@@ -8,7 +8,18 @@ import type { CombatState, FireEvent, Round } from '../core/types'
 import { basicRound, fire, makeRound, previewDamage } from '../core/combat'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 
-export type BotSkill = 'greedy' | 'optimal'
+/**
+ * 봇의 숙련도.
+ *   'novice'  — 미리보기를 전혀 쓰지 않는다. 특수탄이 있으면 있는 대로 넣고 쏜다.
+ *               "처음 하는 사람" 의 대역이다.
+ *   'greedy'  — 후보 몇 개를 previewDamage 로 비교해 최선을 고른다.
+ *   'optimal' — 용량이 작으면 순열을 전수 탐색한다.
+ *
+ * 예전에는 greedy/optimal 둘뿐이었는데, greedy 도 이미 미리보기로 배열을 고르므로
+ * 사실상 둘 다 숙련자였다. 그래서 "배울 것이 있는가" 지표(격차)가 항상 0 이 나왔다 —
+ * 게임에 배울 게 없어서가 아니라 **못하는 쪽을 측정한 적이 없어서**였다.
+ */
+export type BotSkill = 'novice' | 'greedy' | 'optimal'
 export const MAX_ACTIONS = 40
 
 function heatOf(r: Round): number {
@@ -42,6 +53,30 @@ function fillBasics(plan: Round[], cap: number): Round[] {
   return out
 }
 
+/** 순열 전수 (원소 5개 == 120가지. 그 이상은 하지 않는다) */
+function permute(a: Round[]): Round[][] {
+  if (a.length <= 1) return [a]
+  const out: Round[][] = []
+  for (let i = 0; i < a.length; i += 1) {
+    for (const rest of permute(a.slice(0, i).concat(a.slice(i + 1)))) out.push([a[i], ...rest])
+  }
+  return out
+}
+
+/**
+ * 초보의 장전 — 미리보기를 쓰지 않는다.
+ * 갖고 있는 특수탄을 눈에 띄는 순서(id 순)대로 앞에서부터 채우고 나머지는 기본탄.
+ * "예열 먼저, 큰 것 나중" 이라는 이 게임의 핵심을 **모르는** 상태다.
+ */
+function novicePlan(s: CombatState): Round[] {
+  const out: Round[] = []
+  for (const id of Object.keys(s.specials).sort()) {
+    const have = s.specials[id] ?? 0
+    for (let i = 0; i < have && out.length < s.cap; i += 1) out.push(makeRound(id))
+  }
+  return fillBasics(out, s.cap)
+}
+
 /** 후보 배열 몇 가지를 만들어 previewDamage 로 최선을 고른다 */
 function candidates(s: CombatState, skill: BotSkill): Round[][] {
   const sp = availableSpecials(s)
@@ -66,14 +101,19 @@ function candidates(s: CombatState, skill: BotSkill): Round[][] {
     out.push([...fillBasics([], cap - 1), best])
 
     if (skill === 'optimal') {
-      // 상위 후보의 인접 스왑 지역 탐색
       const base = out[1]
-      for (let i = 0; i + 1 < base.length; i += 1) {
-        const swapped = base.slice()
-        const t = swapped[i]
-        swapped[i] = swapped[i + 1]
-        swapped[i + 1] = t
-        out.push(swapped)
+      if (base.length <= 5) {
+        // 용량 5 이하면 순열을 전부 본다 — 배열이 곧 데미지인 게임이므로
+        // "가능한 최선" 을 실제로 찾아야 숙련 격차가 정직하게 측정된다.
+        for (const p of permute(base)) out.push(p)
+      } else {
+        for (let i = 0; i + 1 < base.length; i += 1) {
+          const swapped = base.slice()
+          const t = swapped[i]
+          swapped[i] = swapped[i + 1]
+          swapped[i + 1] = t
+          out.push(swapped)
+        }
       }
     }
   }
@@ -81,6 +121,9 @@ function candidates(s: CombatState, skill: BotSkill): Round[][] {
 }
 
 export function chooseAction(s: CombatState, skill: BotSkill): { kind: 'fire'; plan: Round[] } {
+  // 초보는 비교하지 않는다 — 그게 초보다.
+  if (skill === 'novice') return { kind: 'fire', plan: novicePlan(s) }
+
   let best: Round[] = fillBasics([], s.cap)
   let bestV = -1
   for (const plan of candidates(s, skill)) {
@@ -97,8 +140,10 @@ export function chooseAction(s: CombatState, skill: BotSkill): { kind: 'fire'; p
 }
 
 export function estimateMagDamage(s: CombatState, skill: BotSkill): number {
+  // 화력 프로브는 항상 greedy 기준으로 잰다 — 상점/보상 오라클이
+  // 봇 숙련도에 따라 흔들리면 부착물 가치 측정이 무너진다.
   let best = 0
-  for (const plan of candidates(s, skill)) {
+  for (const plan of candidates(s, skill === 'novice' ? 'greedy' : skill)) {
     const v = previewDamage(s, plan).expected
     if (v > best) best = v
   }

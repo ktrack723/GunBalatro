@@ -123,7 +123,7 @@ function main(): void {
   out('런 ' + RUNS + ' · 성전 등급 ' + STAKE)
   out()
 
-  const skills: BotSkill[] = SKILL === 'both' ? ['greedy', 'optimal'] : [SKILL as BotSkill]
+  const skills: BotSkill[] = SKILL === 'both' ? ['novice', 'greedy', 'optimal'] : [SKILL as BotSkill]
   const packs = skills.map((sk) => ({ sk, ...simulateMany(RUNS, sk, STAKE) }))
 
   out('① 스킬별 성적')
@@ -131,7 +131,10 @@ function main(): void {
   out(pad('스킬', 18) + padS('런', 6) + padS('승률', 8) + padS('중앙섹터', 10) + padS('최고온도', 10))
   for (const p of packs) {
     out(
-      pad(p.sk === 'greedy' ? '보통(greedy)' : '숙련(optimal)', 18) +
+      pad(
+        p.sk === 'novice' ? '초보(novice)' : p.sk === 'greedy' ? '보통(greedy)' : '숙련(optimal)',
+        18,
+      ) +
         padS(String(p.summary.runs), 6) +
         padS(pct(p.summary.winRate), 8) +
         padS(p.summary.medianSector.toFixed(1), 10) +
@@ -221,12 +224,16 @@ function main(): void {
   out('⑧ 성공 기준 판정')
   out('═'.repeat(70))
   const g = packs.find((p) => p.sk === 'greedy') ?? packs[0]
+  // 숙련 격차는 **초보 대비 숙련**으로 잰다. greedy 는 이미 미리보기로 배열을
+  // 고르는 숙련자라, greedy↔optimal 격차는 "게임에 배울 게 없다"가 아니라
+  // "못하는 쪽을 측정하지 않았다" 를 뜻한다.
+  const nv = packs.find((p) => p.sk === 'novice')
   const o = packs.find((p) => p.sk === 'optimal')
   const gap: number[] = []
-  if (o !== undefined) {
-    const cg = survivalCurve(g.results)
+  if (o !== undefined && nv !== undefined) {
+    const cn = survivalCurve(nv.results)
     const co = survivalCurve(o.results)
-    for (let i = 0; i < 8; i += 1) gap.push(co[i] - cg[i])
+    for (let i = 0; i < 8; i += 1) gap.push(co[i] - cn[i])
   }
   let rising = 0
   for (let i = 2; i < gap.length; i += 1) if (gap[i] >= gap[i - 1]) rising += 1
@@ -239,7 +246,11 @@ function main(): void {
   )
   out(verdict(t3 >= 0.35 && t3 <= 0.65) + ' 2. 갈림길이 선택인가 — 목표 35~65% · 실측 ' + pct(t3))
   out(verdict(never.length === 0) + ' 3. 사장된 부착물 없음 — 채택 0회 ' + never.length + '종')
-  out(verdict(rising >= 4) + ' 4. 배울 것이 있는가 — 격차 증가 구간 ' + rising + '/6')
+  out(
+    verdict(rising >= 4) +
+      ' 4. 배울 것이 있는가 — 초보→숙련 생존율 격차 증가 구간 ' + rising + '/6' +
+      (gap.length === 8 ? '  (S8 격차 ' + pct(gap[7]) + ')' : ''),
+  )
   out(
     verdict(g.summary.winRate >= 0.28 && g.summary.winRate <= 0.42) +
       ' 5. 승률 밴드 — 목표 28~42% · 실측 ' + pct(g.summary.winRate),
