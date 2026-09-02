@@ -13,8 +13,8 @@ import { BASIC_DMG } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import type { GameScene } from '../view3d/Scene'
 import type { CombatView } from '../ui/CombatView'
-import { add, clear, el } from '../ui/dom'
-import { dur, easeOut, easeOutBack, tween, wait } from './tween'
+import { add } from '../ui/dom'
+import { dur, easeIn, easeOut, easeOutBack, tween, wait } from './tween'
 import { sfx, sfxShot } from '../audio/Sfx'
 
 export interface SeqDeps {
@@ -44,79 +44,79 @@ function has3d(scene: GameScene | null): scene is GameScene {
 }
 
 // ---------------------------------------------------------------------------
-// FILO 장전
+// FILO 장전 — **전부 3D**
+//   벅샷 룰렛처럼 실제 탄창을 화면 앞으로 가져와, 탄을 하나씩 밀어 넣고,
+//   총에 물린 뒤 장전손잡이를 당긴다. DOM 오버레이는 자막 한 줄만 남는다.
+//
+//   삽탄 순서는 FILO 다 — 발사 순서의 **마지막 탄부터** 넣는다.
+//   먼저 넣은 탄이 아래에 깔리고, 마지막에 넣은 탄이 맨 위에서 먼저 나간다.
 // ---------------------------------------------------------------------------
+function colorNum(r: Round): number {
+  return parseInt(colorOf(r).slice(1), 16)
+}
+
 async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   const sp = d.speed()
-  const host = d.view.viewportEl
-  const stage = add(host, 'div', 'load-stage')
-  const mag = add(stage, 'div', 'load-mag')
-  const caption = add(stage, 'div', 'load-caption', '장전 — 마지막 탄부터')
+  const scene = has3d(d.scene) ? d.scene : null
 
-  // 빈 슬롯을 용량만큼 그려 둔다 (아래가 1번 = 가장 먼저 나가는 탄)
-  const slots: HTMLElement[] = []
-  for (let i = 0; i < plan.length; i += 1) {
-    slots.push(add(mag, 'div', 'load-slot', String(plan.length - i)))
+  // 3D 가 없으면(WebGL 실패) 자막만 띄우고 넘어간다
+  if (scene === null) {
+    const host = d.view.viewportEl
+    const cap = add(host, 'div', 'load-caption', '장전 — 마지막 탄부터')
+    await wait(420, sp)
+    cap.remove()
+    return
   }
 
-  // 1) 탄창이 화면 앞으로 올라온다
+  const gun = scene.gun
+  gun.beginReload(plan.map(colorNum))
+
+  const host = d.view.viewportEl
+  const caption = add(host, 'div', 'load-caption', '탄창 분리')
+
+  // ① 총을 화면 중앙으로 들어올리면서 탄창을 뺀다
   await tween(
-    dur(260, sp),
+    dur(300, sp),
     (t) => {
-      mag.style.transform = `translateY(${(120 * (1 - t)).toFixed(1)}%) scale(${(0.8 + 0.2 * t).toFixed(3)})`
-      mag.style.opacity = String(Math.min(1, t * 2))
+      scene.setInspect(t)
+      gun.setMagPresent(t)
     },
     easeOut,
   )
+  sfx('magOut')
+  caption.textContent = '장전 — 마지막 탄부터'
 
-  // 2) FILO — 발사 순서의 **마지막 탄부터** 넣는다.
-  //    column-reverse 라 먼저 넣은 것이 바닥에 깔리고, 마지막에 넣은 것이 맨 위에 온다.
+  // ② FILO 삽탄
   for (let k = plan.length - 1; k >= 0; k -= 1) {
-    const r = plan[k]
-    const slot = slots[plan.length - 1 - k]
-    const fly = add(stage, 'div', 'load-round', label(r) + ' ' + dmgOf(r))
-    fly.style.setProperty('--c', colorOf(r))
-
-    const to = slot.getBoundingClientRect()
-    const box = stage.getBoundingClientRect()
-    const x = to.left - box.left + to.width / 2
-    const y = to.top - box.top + to.height / 2
-
-    await tween(
-      dur(120, sp),
-      (t) => {
-        const sx = box.width * 0.5
-        const sy = box.height + 40
-        fly.style.left = (sx + (x - sx) * t - 39).toFixed(1) + 'px'
-        fly.style.top = (sy + (y - sy) * t - 11).toFixed(1) + 'px'
-        fly.style.opacity = String(Math.min(1, t * 3))
-      },
-      easeOutBack,
-    )
-    fly.remove()
-    sfx('roundIn', 0.92 + (k % 3) * 0.06, 0)
-    slot.classList.add('filled')
-    slot.style.setProperty('--c', colorOf(r))
-    slot.textContent = label(r)
+    await tween(dur(115, sp), (t) => gun.setRoundInsert(k, t), easeOutBack)
+    gun.setRoundInsert(k, 1)
+    sfx('roundIn', 0.92 + ((plan.length - k) % 3) * 0.06, 0)
     d.haptic('light')
-    await wait(40, sp)
+    await wait(34, sp)
   }
 
-  // 3) 탄창을 총에 물린다
+  // ③ 탄창을 다시 물린다
   caption.textContent = '삽탄'
   sfx('magIn')
-  if (has3d(d.scene)) d.scene.gun.reloadAnim()
-  await tween(
-    dur(220, sp),
-    (t) => {
-      mag.style.transform = `translateY(${(t * 60).toFixed(1)}%) scale(${(1 - 0.15 * t).toFixed(3)})`
-      mag.style.opacity = String(1 - t)
-    },
-    easeOut,
-  )
+  await tween(dur(230, sp), (t) => gun.setMagSeat(t), easeIn)
+  gun.setMagSeat(1)
+  d.haptic('heavy')
+  await wait(60, sp)
+
+  // ④ 장전손잡이 — 당겼다 놓는다
+  caption.textContent = '노리쇠 전진'
+  await tween(dur(130, sp), (t) => gun.setChargingHandle(t), easeOut)
+  sfx('boltBack')
+  await wait(50, sp)
+  await tween(dur(90, sp), (t) => gun.setChargingHandle(1 - t), easeIn)
+  gun.endReload()
   sfx('boltFwd')
   d.haptic('heavy')
-  stage.remove()
+
+  // 총을 원래 자세로 되돌린다
+  caption.remove()
+  await tween(dur(200, sp), (t) => scene.setInspect(1 - t), easeIn)
+  scene.setInspect(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -276,12 +276,3 @@ export async function playEjectSequence(): Promise<void> {
   return
 }
 
-export function magLoadPreview(plan: Round[]): HTMLElement {
-  const box = el('div', 'load-mag')
-  clear(box)
-  for (let i = plan.length - 1; i >= 0; i -= 1) {
-    const slot = add(box, 'div', 'load-slot filled', label(plan[i]))
-    slot.style.setProperty('--c', colorOf(plan[i]))
-  }
-  return box
-}

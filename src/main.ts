@@ -1,4 +1,4 @@
-import { unlockSfx } from './audio/Sfx'
+import { sfx, unlockSfx } from './audio/Sfx'
 // ============================================================================
 // main.ts — 부팅 · rAF 루프 · iOS Safari 대응 (TECH.md §4)
 //   앱 상태기계는 app/App.ts 가 갖는다. 여기서는 "돌아가게 만드는 배선"만 한다.
@@ -65,9 +65,13 @@ class Audio implements AudioHook {
     if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined)
   }
 
-  /** 발행 id: heat.stage.* / bolt.back / bolt.forward / reload.start */
-  play(_id: string): void {
-    // 사운드 미구현 (PRESENTATION §7). 모든 정보에 시각 대응물이 있으므로 무음으로 완주 가능하다.
+  /** GunRig 가 발행하는 id 를 ZzFX 효과음으로 옮긴다 */
+  play(id: string): void {
+    if (id === 'bolt.back') return sfx('boltBack')
+    if (id === 'bolt.forward') return sfx('boltFwd')
+    if (id === 'mag.seat') return sfx('magIn')
+    if (id === 'reload.start') return sfx('magOut')
+    if (id.startsWith('heat.stage.')) return sfx('heatUp')
   }
 }
 

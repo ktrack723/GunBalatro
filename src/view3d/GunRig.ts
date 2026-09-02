@@ -56,6 +56,16 @@ function cyl(
 
 const HALF_PI = Math.PI / 2
 
+const MAG_HOME = new THREE.Vector3(0, -0.190, -0.178)
+/**
+ * 탄창 '제시' 자세 — 총 **왼쪽 옆**으로 빼낸다.
+ * 탄창은 총 아래에 있어서, 카메라가 뒤에서 보는 구도에서는 몸체에 가린다.
+ * 옆으로 빼야 삽탄이 실제로 보인다.
+ */
+const MAG_PRESENT = new THREE.Vector3(-0.165, -0.105, -0.255)
+const ROUND_GEO = new THREE.CylinderGeometry(0.0115, 0.0115, 0.052, 8, 1, false)
+ROUND_GEO.rotateX(Math.PI / 2)
+
 export class GunRig {
   /** 카메라에 붙일 최상위 노드. 위치는 GameScene.resize() 가 잡아준다 */
   readonly object = new THREE.Group()
@@ -75,7 +85,11 @@ export class GunRig {
   private readonly glowMat: THREE.MeshBasicMaterial
 
   private readonly meshes: THREE.Mesh[] = []
+  private readonly magRig = new THREE.Group()
   private readonly magMesh: THREE.Mesh
+  /** 재장전 중 탄창에 들어가는 실제 탄 메시들 */
+  private readonly roundMeshes: THREE.Mesh[] = []
+  private readonly roundHome: THREE.Vector3[] = []
   private readonly boltMesh: THREE.Mesh
   private readonly glowMesh: THREE.Mesh
   private readonly muzzleObj = new THREE.Object3D()
@@ -101,6 +115,9 @@ export class GunRig {
   // 노리쇠 / 장전
   private boltZ = 0
   private boltTarget = 0
+  /** 재장전 연출이 직접 구동할 때 true — 자동 보간을 끈다 */
+  private boltDriven = false
+  private posePresent = 0
   private boltLocked = false
   private reloadT = -1
 
@@ -169,12 +186,22 @@ export class GunRig {
     this.addMerged(brass, this.brassMat)
 
     // --- 애니메이션 파트 ---
+    // 탄창은 **분리되는 부품**이다. 재장전 연출에서 총에서 빼내 카메라 앞으로
+    // 가져오고, 탄을 넣고, 다시 물린다. 그래서 자기 피벗을 가진 그룹으로 만든다.
+    // (지오메트리를 원점 기준으로 만들고 그룹을 제자리에 놓는다)
+    // 탄창은 **앞면이 열린 채널**이다. 막힌 상자로 만들면 안에 든 탄이 보이지 않아
+    // 삽탄 연출이 통째로 헛돈다. 양 옆판 + 뒷판 + 바닥 + 밑판으로 만든다.
     const magGeo = mergeGeometries([
-      box(0.068, 0.170, 0.100, 0, -0.190, -0.178, 0.10),
-      box(0.074, 0.014, 0.106, 0, -0.272, -0.170, 0.10),
+      box(0.009, 0.170, 0.100, -0.030, 0, 0, 0.10), // 좌측판
+      box(0.009, 0.170, 0.100, 0.030, 0, 0, 0.10), // 우측판
+      box(0.068, 0.170, 0.010, 0, 0, -0.045, 0.10), // 뒷판
+      box(0.068, 0.013, 0.100, 0, -0.079, 0, 0.10), // 바닥
+      box(0.074, 0.014, 0.106, 0, -0.090, 0.008, 0.10), // 밑판
     ])!
     this.magMesh = new THREE.Mesh(magGeo, this.steelMat)
-    this.parts.add(this.magMesh)
+    this.magRig.position.copy(MAG_HOME)
+    this.magRig.add(this.magMesh)
+    this.parts.add(this.magRig)
 
     const boltGeo = mergeGeometries([
       box(0.028, 0.028, 0.088, 0.058, -0.030, -0.270),
@@ -269,7 +296,7 @@ export class GunRig {
     this.fx.smoke(this.muzzleWorld)
   }
 
-  /** 장전 (§2.1 700ms 타임라인) */
+  /** 구버전 호환 — 3D 재장전은 beginReload/setMagPresent/... 를 쓴다 */
   reloadAnim(): void {
     this.reloadT = 0
     this.boltLocked = true
@@ -305,8 +332,10 @@ export class GunRig {
     this.recoilNode.position.y = -this.kickX * 0.004
 
     // --- 노리쇠 ---
-    this.boltZ += (this.boltTarget - this.boltZ) * Math.min(1, d * 22)
-    this.boltMesh.position.z = this.boltZ
+    if (!this.boltDriven) {
+      this.boltZ += (this.boltTarget - this.boltZ) * Math.min(1, d * 22)
+      this.boltMesh.position.z = this.boltZ
+    }
 
     // --- 온도 램프 ---
     this.heatShown += (this.heat - this.heatShown) * Math.min(1, d * 6)
@@ -357,31 +386,139 @@ export class GunRig {
   }
 
   private updateReload(d: number): void {
-    if (this.reloadT < 0) {
-      this.magMesh.position.y = 0
-      return
+    // v2: 재장전은 시퀀서가 정규화 진행도로 직접 구동한다 (updateReload 는 유휴 복귀만).
+    if (this.reloadT < 0) return
+    this.reloadT += d
+    if (this.reloadT > 2.4) this.reloadT = -1
+  }
+
+  // =========================================================================
+  // 3D 재장전 — 벅샷 룰렛처럼 전부 3D 로 보여준다
+  //   ① 탄창을 총에서 빼 카메라 앞으로  ② 탄을 하나씩 밀어 넣고(FILO)
+  //   ③ 탄창을 다시 물리고             ④ 장전손잡이를 당겼다 놓는다
+  // =========================================================================
+
+  /** 재장전 시작 — 넣을 탄의 색을 순서대로 받는다 (index 0 = 가장 먼저 발사될 탄) */
+  beginReload(colors: readonly number[]): void {
+    this.clearRounds()
+    this.reloadT = 0
+    this.boltDriven = true
+    this.boltLocked = true
+    this.onSound('reload.start')
+
+    const n = Math.max(1, colors.length)
+    // 탄창 안 적재 위치: 아래부터 쌓인다. 마지막에 넣은 탄(=발사 순서 0)이 맨 위.
+    const top = 0.055
+    const gap = Math.min(0.026, 0.11 / n)
+    for (let i = 0; i < colors.length; i += 1) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: colors[i],
+        roughness: 0.42,
+        metalness: 0.75,
+        emissive: new THREE.Color(colors[i]).multiplyScalar(0.18),
+      })
+      const m = new THREE.Mesh(ROUND_GEO, mat)
+      m.layers.set(1)
+      m.visible = false
+      this.magRig.add(m)
+      this.roundMeshes.push(m)
+      this.roundHome.push(new THREE.Vector3(0, top - i * gap, 0.020))
     }
-    const t = (this.reloadT += d) * 1000
-    if (t < 300) {
-      // 탄창 삽입 (아래에서 올라온다)
-      const p = THREE.MathUtils.clamp(t / 300, 0, 1)
-      this.magMesh.position.y = -0.20 * (1 - p * p)
-    } else if (t < 420) {
-      this.magMesh.position.y = 0
-      if (this.boltTarget !== 0.078) this.boltTarget = 0.078
-      // 삽입 충격
-      const p = (t - 300) / 120
-      this.recoilNode.position.y = -0.012 * Math.sin(p * Math.PI)
-    } else {
-      this.magMesh.position.y = 0
-      if (this.boltLocked) {
-        this.boltLocked = false
-        this.boltTarget = 0
-        this.onSound('bolt.forward')
-        this.kick(0.35)
-      }
-      if (t >= 700) this.reloadT = -1
+  }
+
+  /** 총을 옆으로 돌려 눕히는 '들여다보기' 자세. 재장전 내내 유지된다 */
+  private setGunPose(p: number): void {
+    const q = THREE.MathUtils.clamp(p, 0, 1)
+    this.posePresent = q
+    this.parts.position.y = -0.055 * q
+    this.parts.rotation.x = -0.018 + 0.13 * q
+    this.parts.rotation.y = 0.38 * q
+  }
+
+  /** 탄창 위치. 0 = 총에 물린 상태, 1 = 총 왼쪽으로 빼낸 제시 자세 */
+  private setMagOffset(p: number): void {
+    const q = THREE.MathUtils.clamp(p, 0, 1)
+    this.magRig.position.lerpVectors(MAG_HOME, MAG_PRESENT, q)
+    this.magRig.rotation.x = -0.55 * q
+    this.magRig.rotation.z = 0.42 * q
+  }
+
+  /** 0 = 총에 물린 상태, 1 = 탄창을 빼 든 제시 자세 (총 자세도 함께 움직인다) */
+  setMagPresent(t: number): void {
+    this.setGunPose(t)
+    this.setMagOffset(t)
+  }
+
+  /**
+   * i 번째(발사 순서) 탄의 삽탄 진행도.
+   * 시퀀서는 **마지막 탄부터** 이 함수를 부른다 — 먼저 넣은 탄이 아래에 깔린다.
+   */
+  setRoundInsert(i: number, t: number): void {
+    const m = this.roundMeshes[i]
+    const home = this.roundHome[i]
+    if (m === undefined || home === undefined) return
+    const p = THREE.MathUtils.clamp(t, 0, 1)
+    m.visible = p > 0.001
+    // 왼쪽 바깥에서 밀어 넣는다 (탄창이 총 왼쪽에 있으므로)
+    const fromX = -0.125
+    const fromZ = 0.055
+    m.position.set(
+      home.x + fromX * (1 - p),
+      home.y + 0.035 * (1 - p) * (1 - p),
+      home.z + fromZ * (1 - p),
+    )
+    m.rotation.z = 0.5 * (1 - p)
+  }
+
+  /**
+   * 1 = 탄창이 완전히 물림.
+   * **총 자세는 그대로 둔다** — 이어지는 장전손잡이 동작을 옆에서 봐야 읽힌다.
+   */
+  setMagSeat(t: number): void {
+    const p = THREE.MathUtils.clamp(t, 0, 1)
+    this.setMagOffset(1 - p)
+    if (p >= 1) {
+      this.magRig.position.copy(MAG_HOME)
+      this.magRig.rotation.set(0, 0, 0)
+      this.recoilNode.position.y = -0.010
+      this.onSound('mag.seat')
     }
+  }
+
+  /** 0 = 전진, 1 = 완전 후퇴. 시퀀서가 당겼다 놓는다 */
+  setChargingHandle(t: number): void {
+    const p = THREE.MathUtils.clamp(t, 0, 1)
+    this.boltDriven = true
+    this.boltZ = 0.078 * p
+    this.boltMesh.position.z = this.boltZ
+    this.boltTarget = this.boltZ
+  }
+
+  /** 재장전 종료 — 탄 메시를 치우고 자동 보간을 되돌린다 */
+  endReload(): void {
+    this.clearRounds()
+    this.setGunPose(0)
+    this.boltDriven = false
+    this.boltLocked = false
+    this.boltTarget = 0
+    this.reloadT = -1
+    this.magRig.position.copy(MAG_HOME)
+    this.magRig.rotation.set(0, 0, 0)
+    this.parts.position.y = 0
+    this.parts.rotation.x = -0.018
+    this.parts.rotation.y = 0
+    this.onSound('bolt.forward')
+    this.kick(0.3)
+  }
+
+  private clearRounds(): void {
+    for (const m of this.roundMeshes) {
+      this.magRig.remove(m)
+      const mat = m.material
+      if (mat instanceof THREE.Material) mat.dispose()
+    }
+    this.roundMeshes.length = 0
+    this.roundHome.length = 0
   }
 
   private applyHeatMaterial(heat: number, pulse: number): void {

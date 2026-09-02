@@ -29,6 +29,7 @@ export class GameScene {
   readonly rail: RailCamera
   readonly flashlight: THREE.SpotLight
   readonly ambient: THREE.AmbientLight
+  private readonly viewLight: THREE.DirectionalLight
 
   private mode: ViewMode = 'combat'
   private t = 0
@@ -41,6 +42,11 @@ export class GameScene {
   private gunU = 0.26
   private gunV = -0.60
   private gunDist = 0.62
+  /** 평소 자세 (setGunAnchor 가 정한 값). 재장전 때 여기서 중앙으로 옮겼다 되돌린다 */
+  private baseU = 0.26
+  private baseV = -0.60
+  private baseDist = 0.62
+  private inspectT = 0
   private visW = 1
   private visH = 0.55
   private readonly _lt = new THREE.Vector3()
@@ -73,10 +79,28 @@ export class GameScene {
     // 총은 뷰모델 레이어(1)에 둔다. Renderer 가 깊이를 지우고 따로 그려
     // 복도 지오메트리를 뚫고 들어가는 것을 막는다.
     this.gun.object.traverse((o) => o.layers.set(1))
-    // 조명은 두 레이어 모두를 비춰야 한다 — 그러지 않으면 뷰모델 패스에서
-    // 총이 빛을 못 받아 검은 실루엣이 된다.
-    this.flashlight.layers.enableAll()
-    this.flashlight.target.layers.enableAll()
+
+    // 뷰모델(총) 전용 조명.
+    //   손전등은 카메라에 붙은 스포트라이트라 감쇠가 있다. 총을 재장전 연출로
+    //   카메라 앞까지 끌어오면 거리가 0.5m 밖까지 줄어 **완전히 하얗게 날아간다**.
+    //   그래서 월드 조명(layer 0)과 뷰모델 조명(layer 1)을 분리한다.
+    //   방향광이라 거리와 무관하게 노출이 일정하다.
+    this.viewLight = new THREE.DirectionalLight(0xffe6c8, 3.1)
+    this.viewLight.position.set(0.45, 0.9, 0.55)
+    this.viewLight.layers.set(1)
+    this.viewLight.target.layers.set(1)
+    this.camera.add(this.viewLight)
+    this.camera.add(this.viewLight.target)
+    // 카메라 정면 필 — 총을 뒤에서 볼 때 새까맣게 되지 않게 한다
+    const viewFill = new THREE.DirectionalLight(0xbcd0e4, 1.25)
+    viewFill.position.set(-0.35, 0.15, 1)
+    viewFill.layers.set(1)
+    viewFill.target.layers.set(1)
+    this.camera.add(viewFill)
+    this.camera.add(viewFill.target)
+
+    this.flashlight.layers.set(0)
+    this.flashlight.target.layers.set(0)
     this.ambient.layers.enableAll()
     this.camera.add(this.gun.object)
 
@@ -150,9 +174,10 @@ export class GameScene {
    * 세로/가로에서 같은 값이 같은 구도를 만든다.
    */
   setGunAnchor(u: number, v: number, dist: number): void {
-    this.gunU = u
-    this.gunV = v
-    this.gunDist = dist
+    this.baseU = u
+    this.baseV = v
+    this.baseDist = dist
+    this.applyInspect()
     this.layoutGun()
   }
 
@@ -211,6 +236,25 @@ export class GameScene {
    * 절두체 오프셋이 걸려 있어도 정확하다:
    *   ndcY = (e5*y + e9*z) / -z,  z = -d  →  y = d*(ndcY + e9)/e5
    */
+  /**
+   * 재장전 '들여다보기' 자세. 0 = 평소(구석), 1 = 화면 중앙으로 끌어와 크게.
+   * 전투 중 총은 시야를 가리지 않게 구석에 있는데, 재장전은 **보여줘야 하는 연출**이라
+   * 그동안만 카메라 앞으로 가져온다 (벅샷 룰렛이 총을 들어올리는 것과 같은 이유).
+   */
+  setInspect(t: number): void {
+    this.inspectT = THREE.MathUtils.clamp(t, 0, 1)
+    this.applyInspect()
+  }
+
+  private applyInspect(): void {
+    const t = this.inspectT
+    const e = t * t * (3 - 2 * t) // smoothstep
+    this.gunU = this.baseU + (0.06 - this.baseU) * e
+    this.gunV = this.baseV + (-0.24 - this.baseV) * e
+    this.gunDist = this.baseDist + (0.56 - this.baseDist) * e
+    this.layoutGun()
+  }
+
   private layoutGun(): void {
     const ndcX = this.visW * (this.gunU + 1) - 1
     const ndcY = 1 - this.visH * (1 - this.gunV)

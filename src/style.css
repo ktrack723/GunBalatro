@@ -587,40 +587,14 @@ html, body {
 .dmg-x    { font-size: 22px; }
 .dmg-total { font-size: 64px; }
 
-/* --- 장전 연출: 탄창을 화면 앞으로 가져와 FILO 로 채운다 --- */
-.load-stage {
-  position: absolute; inset: 0; z-index: 16; pointer-events: none;
-  display: flex; align-items: center; justify-content: center;
-}
-.load-mag {
-  position: relative;
-  width: 92px; border-radius: 8px 8px 5px 5px;
-  background: linear-gradient(180deg, #2a3038, #171b21);
-  border: 2px solid #3d4550;
-  box-shadow: 0 18px 44px rgba(0,0,0,.8);
-  display: flex; flex-direction: column-reverse; align-items: center;
-  padding: 8px 7px; gap: 4px;
-  transform: translateY(120%) scale(.8);
-}
-.load-slot {
-  width: 100%; height: 22px; border-radius: 3px;
-  background: #0c0f13; border: 1px solid #2b323b;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 800; color: var(--text-dim);
-}
-.load-slot.filled { border-color: var(--c, #6a7480); color: var(--c, var(--text)); }
-.load-round {
-  position: absolute; width: 78px; height: 22px; border-radius: 3px;
-  background: #10141a; border: 1px solid var(--c, #6a7480);
-  color: var(--c, var(--text));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 800;
-  box-shadow: 0 0 12px rgba(0,0,0,.7);
-}
+/* --- 장전 연출은 전부 3D 다 (GunRig). DOM 에는 자막 한 줄만 남는다 --- */
 .load-caption {
-  position: absolute; bottom: 18%; left: 0; right: 0; text-align: center;
-  font-size: 11px; color: var(--text-dim); letter-spacing: .1em;
+  position: absolute; bottom: 12%; left: 0; right: 0; text-align: center;
+  font-size: 12px; color: var(--text-dim); letter-spacing: .16em;
+  pointer-events: none; text-shadow: 0 2px 10px #000;
+  animation: capIn .18s ease-out both;
 }
+@keyframes capIn { from { opacity: 0; transform: translateY(6px); } }
 
 /* --- 부착물 교체 시트 --- */
 .swap-list { display: flex; flex-direction: column; gap: 7px; }
