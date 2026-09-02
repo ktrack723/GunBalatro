@@ -3,7 +3,6 @@
 // 패시브는 훅으로만 규칙을 왜곡한다 — 수치를 새로 만들지 않는다.
 
 import type {
-  Ammo,
   EnemyArchetype,
   EnemyArchetypeId,
   EnemyInstance,
@@ -19,7 +18,6 @@ import {
   THREAT_HP_MUL,
   THREAT_SPEED_ADD,
 } from '../types'
-import { ammoStats } from '../ammoStats'
 
 // ---------------------------------------------------------------------------
 // 아키타입 (BALANCE.md §3 "아키타입 · 위험도 보정" 표와 1:1)
@@ -89,134 +87,107 @@ export const ARCH_BY_ID: Record<EnemyArchetypeId, EnemyArchetype> = {
 const RIGID: EnemyPassive = {
   id: 'rigid',
   name: '강직',
-  text: '탄창의 2번째 탄은 데미지가 0이 된다.',
-  modifyDamage(damage: number, c: FireCtx): number {
-    return c.index === 1 ? 0 : damage
-  },
+  text: '탄창의 2번째 탄 데미지 0',
+  modifyDamage: (d, c) => (c.index === 1 ? 0 : d),
 }
 
-/** 장갑: 앞부분 축 봉쇄. 매 사격의 첫 2발(index 0,1)이 42%. */
 const PLATED: EnemyPassive = {
   id: 'plated',
   name: '장갑',
-  text: '매 사격의 첫 2발은 데미지가 42%가 된다.',
-  modifyDamage(damage: number, c: FireCtx): number {
-    return c.index < 2 ? Math.round(damage * 0.42) : damage
-  },
+  text: '매 사격의 첫 2발 데미지 50%',
+  modifyDamage: (d, c) => (c.index < 2 ? Math.round(d * 0.5) : d),
 }
 
-/** 돌진: 자원(거리) 축 봉쇄. 사격 행동의 거리 소모와 별개로 추가 6m. */
+const BULWARK: EnemyPassive = {
+  id: 'bulwark',
+  name: '최후 방벽',
+  text: '탄창의 마지막 탄 데미지 50%',
+  modifyDamage: (d, c) => (c.isLast ? Math.round(d * 0.5) : d),
+}
+
 const LUNGE: EnemyPassive = {
   id: 'lunge',
   name: '돌진',
-  text: '사격 행동이 끝날 때마다 거리가 6m 더 줄어든다.',
-  onMagEnd(c: MagCtx): void {
-    c.s.distance -= 6
+  text: '사격을 마칠 때마다 추가로 4m 접근',
+  onMagEnd: (c) => {
+    if (c.s.enemy.hp <= 0) return
+    c.s.distance -= 4
   },
 }
 
-/** 냉혈: 온도 축 봉쇄. 획득분에만 곱한다(누적 온도 자체를 건드리지 않는다). */
 const COLDBLOOD: EnemyPassive = {
   id: 'coldblood',
   name: '냉혈',
-  text: '온도 획득이 48% 줄어든다.',
-  modifyHeatGain(gain: number): number {
-    return gain * 0.52
-  },
+  text: '온도 획득 40% 감소',
+  modifyHeatGain: (g) => g * 0.6,
 }
 
-/** 재생: 시간 축 봉쇄. 사격 사이에 최대 HP 의 6% 회복. */
 const REGEN: EnemyPassive = {
   id: 'regen',
   name: '재생',
-  text: '사격 사이에 최대 체력의 6%를 회복한다.',
-  onMagEnd(c: MagCtx): void {
+  text: '사격 사이 최대 HP의 4% 회복',
+  onMagEnd: (c) => {
     const e = c.s.enemy
     if (e.hp <= 0) return
-    const heal = Math.round(e.maxHp * 0.06)
-    e.hp = Math.min(e.maxHp, e.hp + heal)
+    e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * 0.04))
   },
 }
 
-/** 역병: 덱 축 봉쇄. 가방+트레이에서 1발을 이번 전투 한정으로 소멸시킨다(spent 로도 안 간다). */
-const PLAGUE: EnemyPassive = {
-  id: 'plague',
-  name: '역병',
-  text: '사격이 끝날 때마다 탄 1발이 이번 전투에서 소멸한다.',
-  onMagEnd(c: MagCtx): void {
-    if (c.s.dryRun) return
-    const bagLen = c.s.bag.length
-    const total = bagLen + c.s.tray.length
-    if (total <= 0) return
-    const i = c.s.rng.int(total)
-    if (i < bagLen) c.s.bag.splice(i, 1)
-    else c.s.tray.splice(i - bagLen, 1)
+/** 특수탄 축 봉쇄 — 특수탄 의존 빌드에만 아프다 */
+const SEALED: EnemyPassive = {
+  id: 'sealed',
+  name: '봉인',
+  text: '특수탄 데미지 50%',
+  modifyDamage: (d, c) => (c.round.special !== null ? Math.round(d * 0.5) : d),
+}
+
+/** 특수탄 재고 압박 — 장기전을 벌하고 속공을 강요한다 */
+const DEVOUR: EnemyPassive = {
+  id: 'devour',
+  name: '탐식',
+  text: '사격을 마칠 때마다 특수탄 1발이 소실된다',
+  onMagEnd: (c) => {
+    if (c.s.dryRun || c.s.enemy.hp <= 0) return
+    const ids = Object.keys(c.s.specials).filter((k) => (c.s.specials[k] ?? 0) > 0)
+    if (ids.length === 0) return
+    const id = ids[c.s.rng.int(ids.length)]
+    c.s.specials[id] = Math.max(0, (c.s.specials[id] ?? 0) - 1)
   },
 }
 
-/** 암흑: 정보 축 봉쇄. 트레이 앞쪽 5장이 뒷면. */
-const BLIND: EnemyPassive = {
-  id: 'blind',
-  name: '암흑',
-  text: '트레이의 5발이 뒷면으로 가려진다.',
-  hiddenTrayCount: 5,
-}
-
-/** 성별 거부: 특정 탄종 축 봉쇄. 축성탄 데미지 0 + 와일드 판정 무효. */
-const ANATHEMA: EnemyPassive = {
-  id: 'anathema',
-  name: '성별 거부',
-  text: '축성탄 데미지 0. 와일드 판정도 불가.',
-  disableWildcard: true,
-  modifyDamage(damage: number, c: FireCtx): number {
-    return c.ammo.type === 'SANC' ? 0 : damage
+/** 부착물 축 봉쇄 — 레일 조합 빌드에만 아프다 */
+const JAMMING: EnemyPassive = {
+  id: 'jamming',
+  name: '교란',
+  text: '이번 전투 동안 보조 레일 부착물이 작동하지 않는다',
+  onCombatStart: (c) => {
+    const railIds = new Set(c.s.loadout.rails.filter((r) => r !== null).map((r) => r!.id))
+    if (railIds.size === 0) return
+    c.s.attachments = c.s.attachments.filter((a) => !railIds.has(a.id))
   },
 }
 
-/** 열역학: 상한 축 봉쇄. 발사 직후 온도가 17을 넘었으면 그 사격을 끊는다. */
+/** 온도 상한 — 과열 빌드에만 아프다 */
 const ENTROPY: EnemyPassive = {
   id: 'entropy',
   name: '열역학',
-  text: '온도가 17을 넘으면 그 사격이 즉시 끝난다.',
-  onAfterShot(c: FireCtx): void {
-    if (c.s.heat > 17) c.s.abortMag = true
-  },
-}
-
-/** 포식: 최고치 축 봉쇄. 사격 시작 시 트레이의 최고 데미지 탄 1발을 먹는다. */
-const DEVOUR: EnemyPassive = {
-  id: 'devour',
-  name: '포식',
-  text: '사격 시작 시 트레이의 최고 데미지 탄을 삼킨다.',
-  onMagStart(c: MagCtx): void {
-    if (c.s.dryRun) return
-    const tray = c.s.tray
-    if (tray.length === 0) return
-    let best = 0
-    let bestDmg = ammoStats(tray[0]).dmg
-    for (let i = 1; i < tray.length; i++) {
-      const d = ammoStats(tray[i]).dmg
-      if (d > bestDmg) {
-        bestDmg = d
-        best = i
-      }
-    }
-    const eaten: Ammo[] = tray.splice(best, 1)
-    if (eaten.length > 0) c.s.spent.push(eaten[0])
+  text: '온도가 26을 넘으면 그 사격이 즉시 종료된다',
+  onAfterShot: (c) => {
+    if (c.s.heat > 26) c.s.abortMag = true
   },
 }
 
 export const PASSIVES: EnemyPassive[] = [
   RIGID,
   PLATED,
+  BULWARK,
   LUNGE,
   COLDBLOOD,
   REGEN,
-  PLAGUE,
-  BLIND,
-  ANATHEMA,
-  ENTROPY,
+  SEALED,
   DEVOUR,
+  JAMMING,
+  ENTROPY,
 ]
 
 export const PASSIVE_BY_ID: Record<string, EnemyPassive> = (() => {
@@ -285,5 +256,6 @@ export function makeEnemy(opts: {
     label: arch.name + ' ' + threatMark(opts.threat),
     // 무리만 연출상 다수. 규칙상으로는 언제나 단일 개체다 (GDD §8.2).
     bodyCount: arch.id === 'horde' ? 5 : 1,
+    vuln: 0,
   }
 }
