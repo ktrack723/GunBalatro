@@ -2,20 +2,6 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<!--PAGES_REDIRECT_START-->
-<script>
-  // ★ 이 파일은 Vite 개발 서버용 진입점이다 — /src/main.ts 는 TypeScript 라
-  //   브라우저가 실행하지 못한다. 그런데 GitHub Pages 소스가 아직
-  //   "Deploy from a branch (main /root)" 라서, 워크플로가 올린 dist 아티팩트가
-  //   아니라 **저장소 루트인 이 파일**이 그대로 서빙된다 → 흰 화면.
-  //   그래서 정적 호스팅에서는 빌드 산출물로 넘긴다.
-  //   Pages 소스를 "GitHub Actions" 로 바꾸면 서빙되는 건 dist/index.html 이라
-  //   이 스크립트는 아예 로드되지 않는다 (그때 이 블록과 추적 중인 dist 를 지우면 된다).
-  if (location.hostname.endsWith('.github.io') && !/\/dist\//.test(location.pathname)) {
-    location.replace('./dist/' + location.search + location.hash)
-  }
-</script>
-<!--PAGES_REDIRECT_END-->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#07080a" />
 <meta name="description" content="GunBalatro — 탄을 어떤 순서로 넣느냐가 전부인 1인칭 좀비 덱빌딩 슈터" />
@@ -24,13 +10,14 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2307080a'/%3E%3Cpath%20d='M12.5%208.5L16%203l3.5%205.5v10h-7z'%20fill='%23c8a44d'/%3E%3Crect%20x='12.5'%20y='19'%20width='7'%20height='9'%20rx='1'%20fill='%238a7133'/%3E%3Crect%20x='12.5'%20y='21.5'%20width='7'%20height='1.2'%20fill='%23070809'/%3E%3C/svg%3E" />
 <link rel="manifest" href="./manifest.json" />
 <title>GunBalatro</title>
-<link rel="stylesheet" href="/src/style.css" />
+  <script type="module" crossorigin src="./assets/index-C5ZuVGdi.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/three-K2Nm71ik.js">
+  <link rel="stylesheet" crossorigin href="./assets/index-C0JJfDqw.css">
 </head>
 <body>
 <div id="app">
   <canvas id="scene"></canvas>
   <div id="ui"></div>
 </div>
-<script type="module" src="/src/main.ts"></script>
 </body>
 </html>

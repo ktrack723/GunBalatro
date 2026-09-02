@@ -1,5 +1,7 @@
 node_modules
-dist
+# dist 는 추적한다 — Pages 소스가 "Deploy from a branch(main /root)" 인 동안
+# 실제로 서빙되는 것은 저장소 루트이고, 루트 index.html 은 여기로 넘긴다.
+# Pages 소스를 "GitHub Actions" 로 바꾸면 이 줄을 dist 로 되돌려도 된다.
 .vite
 *.log
 sim-out/

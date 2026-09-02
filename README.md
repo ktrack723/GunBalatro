@@ -78,7 +78,22 @@ npm run sim        # 헤드리스 밸런스 시뮬레이터 (성공 기준 6개 
 - `#dev` — fps / 드로우콜 / 삼각형 / DPR / 품질 오버레이
 
 배포는 `main` 브랜치 푸시 시 GitHub Actions 가 GitHub Pages 로 자동 배포한다
-(`.github/workflows/deploy.yml`, `GH_PAGES=1` 로 base 경로 `/GunBalatro/`).
+(`.github/workflows/deploy.yml`). base 는 `'./'` — 산출물이 어느 하위 경로에 놓여도 동작한다.
+
+> **⚠ Pages 소스 설정을 바꿔야 한다 (한 번만).**
+> 현재 저장소의 Pages 소스가 **Deploy from a branch (main / root)** 로 되어 있어서,
+> 푸시할 때마다 워크플로와 별개로 GitHub 의 Jekyll 빌더가 **저장소 루트를 그대로** 서빙한다.
+> 루트 `index.html` 은 Vite 개발용 진입점이라 `/src/main.ts`(TypeScript)를 가리키고,
+> 브라우저는 그걸 실행하지 못한다 → **흰 화면**. 게다가 Jekyll 배포가 워크플로 배포보다
+> 20초쯤 늦게 끝나서 항상 이쪽이 이긴다.
+>
+> **영구 해결:** Settings → Pages → Build and deployment → Source 를 **GitHub Actions** 로 바꾼다.
+>
+> 그때까지의 임시 조치로 (a) `dist/` 를 저장소에 커밋해 두고, (b) 루트 `index.html` 이
+> `*.github.io` 에서 열렸을 때 `./dist/` 로 넘긴다. 소스를 GitHub Actions 로 바꾸면
+> 서빙되는 건 `dist/index.html` 이라 이 리다이렉트는 로드되지도 않으므로,
+> 그 시점에 `dist/` 추적과 워크플로의 'dist 갱신' 스텝, 루트 `index.html` 의
+> `PAGES_REDIRECT` 블록을 지우면 된다.
 
 ## 개발 현황
 
