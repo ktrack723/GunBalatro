@@ -120,12 +120,17 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'relic',
     text: '기본탄의 DMG 가 이번 탄창 최고 DMG 와 같아진다',
     hooks: {
+      // 툴팁대로 **탄창 스코프**다. vars 는 전투 내내 살아 있으므로 명시적으로 지운다.
+      onMagStart: (c) => { c.s.vars[c.self] = 0 },
       onFire: (c) => {
         if (!isBasic(c)) return
         const best = getVar(c.s, c.self)
         if (best > c.dmg) { c.dmg = best; proc(c) }
       },
+      // **기본탄의 값은 기록하지 않는다.** 기록하면 자기가 올려준 값을 다시 최고값으로
+      // 삼는 양의 되먹임이 되어 탄창마다 계단식으로 자란다 (실측 42 → 462, 11배).
       onAfterShot: (c) => {
+        if (isBasic(c)) return
         if (c.dmg > getVar(c.s, c.self)) c.s.vars[c.self] = c.dmg
       },
     },

@@ -203,6 +203,15 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
   const queue = plan.slice()
   let i = 0
   let guard = 0
+  /**
+   * 같은 탄이 연속으로 재발사된 횟수.
+   * 미소모 확률이 높으면 기하분포라 꼬리가 길다 — 용량 2 짜리 탐식의 성궤가
+   * 한 탄창에 평균 10.0발(최대 34발)을 쏘고 있었다. 온도는 발사마다 누적되므로
+   * 그 꼬리에서 피해가 폭발한다(실측 단일 탄창 364,050 = 섹터8 보스 2회분).
+   * 규칙은 "가끔 한 발 더" 여야지 "탄창이 안 빈다" 가 아니다.
+   */
+  let refire = 0
+  const MAX_REFIRE = 2
   while (queue.length > 0 && guard < 60) {
     guard += 1
     const r = queue[0]
@@ -217,7 +226,7 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
       if (freeFirst && !usedFreeFirst) {
         usedFreeFirst = true
         consumed = false
-      } else if (keepChance > 0 && !s.dryRun && s.rng.next() < keepChance) {
+      } else if (keepChance > 0 && !s.dryRun && refire < MAX_REFIRE && s.rng.next() < keepChance) {
         consumed = false
       }
       if (consumed) {
@@ -227,8 +236,15 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
       }
     }
 
-    if (consumed) queue.shift()
-    else if (keepChance <= 0) queue.shift() // 무료 1회는 재발사하지 않는다
+    if (consumed) {
+      queue.shift()
+      refire = 0
+    } else if (keepChance <= 0) {
+      queue.shift() // 무료 1회는 재발사하지 않는다
+      refire = 0
+    } else {
+      refire += 1
+    }
 
     if (s.enemy.hp <= 0) break
     if (s.abortMag) break

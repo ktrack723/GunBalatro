@@ -162,6 +162,48 @@ describe('미리보기는 상태를 오염시키지 않는다', () => {
   })
 })
 
+describe('구조 불변식 — 실측으로 잡아낸 결함', () => {
+  it('사격은 어떤 조합에서도 적을 회복시키지 않는다', () => {
+    // 도박꾼의 성구(−40)가 기본탄 바닥값 12 를 넘겨 음수 피해를 냈고,
+    // `enemy.hp -= damage` 가 그대로 회복으로 작동했다 (실측 2,000발 중 1,022발).
+    let negatives = 0
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const s = startCombat(loadout(['rl_gambler']), dummy(), makeRng(seed))
+      const ev = fire(s, [basicRound(), basicRound(), basicRound(), basicRound(), basicRound()])
+      for (const x of ev) if (x.t === 'shot' && x.damage < 0) negatives += 1
+    }
+    expect(negatives).toBe(0)
+  })
+
+  it('볼터의 원형은 탄창을 넘겨도 누적되지 않는다', () => {
+    // onAfterShot 이 자기가 올려준 기본탄 값을 다시 최고값으로 삼아
+    // 탄창마다 계단식으로 자랐다 (실측 42 → 462).
+    const s = startCombat(loadout(['br_archetype']), dummy(), makeRng(7))
+    const peak: number[] = []
+    for (let m = 0; m < 4; m += 1) {
+      const ev = fire(s, [basicRound(), basicRound(), basicRound(), basicRound(), basicRound()])
+      peak.push(Math.max(...ev.filter((x) => x.t === 'shot').map((x) => (x as { dmg: number }).dmg)))
+    }
+    expect(Math.max(...peak)).toBeLessThanOrEqual(peak[0] as number)
+  })
+
+  it('미소모 재발사는 탄당 2회로 제한된다', () => {
+    // 탐식의 성궤(미소모 80%)가 용량 2 로 한 탄창에 평균 10.0발(최대 34발)을 쐈다.
+    let worst = 0
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const s = startCombat(
+        loadout(['mg_greed'], { sp_thermite: 5, sp_ap: 5 }),
+        dummy(),
+        makeRng(seed),
+      )
+      const ev = fire(s, [makeRound('sp_thermite'), makeRound('sp_ap')])
+      worst = Math.max(worst, ev.filter((x) => x.t === 'shot').length)
+    }
+    // 탄 2발 × (원발사 1 + 재발사 최대 2) = 6
+    expect(worst).toBeLessThanOrEqual(6)
+  })
+})
+
 describe('콘텐츠 무결성', () => {
   it('부착물 id 가 중복되지 않는다', () => {
     const ids = new Set(ATTACHMENTS.map((a) => a.id))

@@ -141,6 +141,12 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
   s.heat += heatGain
   if (s.heat > s.peakHeat) s.peakHeat = s.heat
 
+  // 음수 방어. 덧셈만 하는 게임이라 마이너스 보정(도박꾼의 −40 등)이 기본탄의
+  // 바닥값 12 를 넘으면 dmg 가 음수가 되고, 그러면 `enemy.hp -= damage` 가
+  // **적을 회복시킨다.** 실측 2,000발 중 1,022발이 그랬다(최악 −105).
+  // 사격은 어떤 조합에서도 적을 낫게 하지 않는다 — 여기서 한 번에 막는다.
+  if (dmg < 0) dmg = 0
+
   const rawDamage = Math.round(dmg * s.heat)
 
   // ---- STEP 6: 적 패시브 & 취약 ------------------------------------------
@@ -148,6 +154,7 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
   const pierce = s.flags['pierce'] === true
   if (!pierce && passive?.modifyDamage !== undefined) damage = passive.modifyDamage(damage, ctx)
   if (s.enemy.vuln > 0) damage = Math.round(damage * (1 + s.enemy.vuln))
+  if (damage < 0) damage = 0
   s.flags['pierce'] = false
 
   s.enemy.hp -= damage
