@@ -310,7 +310,7 @@ export class EnemyRig {
 
   /** 손전등이 겨눌 z (Scene 이 읽어 스포트라이트 타깃을 옮긴다) */
   get bodyZ(): number {
-    return this.z
+    return this.object.position.z + this.z
   }
 
   /** 피격: 백색 emissive 2프레임 후 감쇠 (§2.2 t=120) */

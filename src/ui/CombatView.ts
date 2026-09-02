@@ -7,7 +7,7 @@
 //   "지금 내 총이 무엇인가"가 항상 보여야 한다. 사격 전이면 탭해서 교체할 수 있다.
 // ============================================================================
 import type { Attachment, CombatState, Round, SlotKind } from '../core/types'
-import { BASIC_DMG, BASIC_HEAT, RAIL_ACCEPTS, SLOT_LABEL } from '../core/types'
+import { BASIC_DMG, BASIC_HEAT, RAIL_ACCEPTS, RARITY_LABEL, SLOT_LABEL } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import { basicRound, makeRound, swapAttachment } from '../core/combat'
 import { computeHeatCarry } from '../core/pipeline'
@@ -16,12 +16,7 @@ import { popover } from './popover'
 import { sfx } from '../audio/Sfx'
 
 /** 등급을 글자로 — 색만으로 구분하면 색각 이상에서 정보가 통째로 사라진다 */
-export const RARITY_KO: Record<string, string> = {
-  common: '흔함',
-  uncommon: '비범',
-  rare: '희귀',
-  relic: '유물',
-}
+export const RARITY_KO: Record<string, string> = RARITY_LABEL
 
 const HEAT_TIERS = [
   { at: 0, color: '#8d949c', name: '냉각' },
@@ -367,7 +362,7 @@ export class CombatView {
       const def = SPECIAL_BY_ID[id]
       if (def === undefined) continue
       const left = (s.specials[id] ?? 0) - this.plan.filter((r) => r.special === id).length
-      const card = add(this.ammoRow, 'div', 'ammo-card')
+      const card = add(this.ammoRow, 'div', 'ammo-card r-' + def.rarity)
       card.style.setProperty('--c', def.color)
       add(card, 'div', 'ammo-name', def.name)
       add(card, 'div', 'ammo-stat', def.dmg + ' · ' + def.heat.toFixed(1))
@@ -542,7 +537,7 @@ export async function showSwapSheet(
       add(body, 'div', 'pick-name', a.name)
       add(body, 'div', 'pick-text', a.text)
       const meta = add(body, 'div', 'pick-meta')
-      add(meta, 'span', 'rar ' + a.rarity, a.rarity)
+      add(meta, 'span', 'rar ' + a.rarity, RARITY_KO[a.rarity])
       pick.addEventListener('click', () => {
         if (swapAttachment(s, a.id, railIndex)) changed = true
         finish()

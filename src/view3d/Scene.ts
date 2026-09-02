@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import { Fx } from './Fx'
 import { GunRig } from './GunRig'
 import { EnemyRig } from './EnemyRig'
-import { CorridorStreamer, type CorridorKind } from './CorridorStreamer'
+import { CORRIDOR_LENGTH, CorridorStreamer, type CorridorKind } from './CorridorStreamer'
 import { RailCamera } from './RailCamera'
 
 export type ViewMode = 'combat' | 'travel'
@@ -143,24 +143,41 @@ export class GameScene {
   }
 
   setMode(mode: ViewMode): void {
+    const was = this.mode
     this.mode = mode
     this.applyFlashlightMode(mode)
     if (mode === 'combat') {
       this.enemy.setVisible(true)
       this.gun.setLowered(false)
       this.corridor.hideDoors()
-      this.camera.position.set(0, EYE, 0.25)
-      this.camera.rotation.set(0, 0, 0)
-      // 이동 구간은 트레드밀이라 복도 그룹이 카메라를 따라 계속 −z 로 밀려간다
-      // (continueTravel 이 매 구간 originZ 를 갱신한다). 전투는 카메라를 원점으로
-      // 되돌리므로 복도도 같이 되돌리지 않으면 **전투가 허공에서 벌어진다** —
-      // 실제로 벽도 바닥도 없는 검은 화면이 나왔다.
-      this.corridor.setOriginZ(0)
+      // ★ 컷 없음. 예전에는 여기서 카메라를 (0, EYE, 0.25) 로, 복도를 원점으로
+      //   되돌려서 복도 끝에 서 있던 플레이어가 한 프레임에 다른 복도 앞으로
+      //   순간이동했다. 지금은 **걸어온 자리에 그대로 서서** 적을 맞는다:
+      //   전투 기준점(anchor)을 지금 카메라 자리로 잡고, 적은 그 앞에 세우며,
+      //   복도는 손대지 않는다. 카메라 자세만 0.45초에 걸쳐 전투 스웨이로 섞는다.
+      if (was !== 'combat' || !this.anchored) {
+        this.anchor.set(this.camera.position.x, 0, this.camera.position.z)
+        this.blendFrom.copy(this.camera.position)
+        this.blendRot.copy(this.camera.rotation)
+        this.blend = 0
+        this.anchored = true
+      }
+      this.enemy.object.position.set(this.anchor.x, 0, this.anchor.z)
     } else {
       this.enemy.setVisible(false)
       this.gun.setLowered(true)
     }
   }
+
+  /** 전투 기준점 — 복도 위 '지금 서 있는 자리'. 적·스웨이·손전등이 여기 기준이다 */
+  private readonly anchor = new THREE.Vector3(0, 0, 0)
+  private anchored = false
+  private readonly blendFrom = new THREE.Vector3()
+  private readonly blendRot = new THREE.Euler()
+  private blend = 1
+  private readonly _bp = new THREE.Vector3()
+  private readonly _bq = new THREE.Quaternion()
+  private readonly _tq = new THREE.Quaternion()
 
   getMode(): ViewMode {
     return this.mode
@@ -168,13 +185,10 @@ export class GameScene {
 
   /** 이동 구간 시작 — 복도를 새 시드로 조립하고 레일을 태운다 (첫 진입) */
   startTravel(seed: number, kind: CorridorKind, seconds: number, hint: string | null = null): void {
-    this.corridor.setHint(hint)
-    this.corridor.rebuild(seed, kind)
-    this.corridor.setOriginZ(0)
-    this.camera.position.set(0, 1.62, 0)
-    this.rail.reset(seed)
-    this.rail.start(seconds)
-    this.setMode('travel')
+    // 첫 진입도 이어달리기와 같다 — 카메라를 원점으로 되돌리면 전투 자리에서
+    // 다음 복도로 넘어갈 때 한 프레임 컷이 생긴다. z 는 구간마다 −46m 씩 깊어지지만
+    // 수백 구간이어도 부동소수 정밀도에는 한참 여유가 있다.
+    this.continueTravel(seed, kind, seconds, hint)
   }
 
   /**
@@ -313,19 +327,33 @@ export class GameScene {
       this.rail.update(d, this.camera)
       this.corridor.update(d, this.rail.progress)
     } else {
-      // 전투: 제자리 호흡 스웨이 (카메라 기본 자세를 매 프레임 확정한다)
+      // 전투: 제자리 호흡 스웨이 — 기준점(anchor) 주변에서 숨 쉰다.
       const s = this.t
-      this.camera.position.set(
-        Math.sin(s * 0.62) * 0.012,
+      this._bp.set(
+        this.anchor.x + Math.sin(s * 0.62) * 0.012,
         EYE + Math.sin(s * 1.05) * 0.009,
-        0.25,
+        this.anchor.z + Math.sin(s * 0.41) * 0.01,
       )
       this.camera.rotation.set(
         Math.sin(s * 0.83 + 0.4) * 0.004,
         Math.sin(s * 0.51) * 0.006,
         Math.sin(s * 0.37) * 0.003,
       )
-      this.corridor.update(d, 0)
+      if (this.blend < 1) {
+        // 걸어오던 자세(보행 흔들림 포함)에서 전투 자세로 부드럽게 넘어간다
+        this.blend = Math.min(1, this.blend + real / 0.45)
+        const k = this.blend * this.blend * (3 - 2 * this.blend)
+        this._tq.setFromEuler(this.camera.rotation)
+        this._bq.setFromEuler(this.blendRot)
+        this._bq.slerp(this._tq, k)
+        this.camera.quaternion.copy(this._bq)
+        this.camera.position.lerpVectors(this.blendFrom, this._bp, k)
+      } else {
+        this.camera.position.copy(this._bp)
+      }
+      // 복도 스트리밍은 카메라가 복도 안 어디쯤인지로 계속 굴린다 (트레드밀 유지)
+      const prog = (this.corridor.originZ - this.camera.position.z) / CORRIDOR_LENGTH
+      this.corridor.update(d, THREE.MathUtils.clamp(prog, 0, 1))
     }
 
     // 손전등이 걸음/호흡에 맞춰 흔들린다 (카메라 로컬)

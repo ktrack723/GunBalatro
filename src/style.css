@@ -367,6 +367,11 @@ html, body {
 .rar.relic    { color: var(--r-relic);    border-color: var(--r-relic);
                 box-shadow: 0 0 10px rgba(224,178,60,.28) inset; }
 .slotname { font-size: 10px; color: var(--text-faint); }
+/* 상점 탄피 잔액 — 살 수 있는지 판단하는 숫자라 크게 */
+.screen p.shop-brass {
+  font-family: var(--font-num); font-size: 18px; font-weight: 800;
+  color: var(--brass); margin: 2px 0 6px;
+}
 
 /* 갈림길 문 */
 .doors { display: flex; gap: 10px; }
@@ -632,3 +637,92 @@ html, body {
   white-space: nowrap; letter-spacing: .02em;
 }
 .mag-preview-num.lethal { color: var(--brass); text-shadow: none; }
+
+
+/* =========================================================================
+   레어도 비주얼 — 한눈에 등급이 읽혀야 한다.
+   일반: 무광 / 희귀: 푸른 테두리 / 영웅: 보라 글로우가 숨 쉰다 /
+   유물: 금빛 글로우 + 반짝임(sparkle)이 카드 위를 흐른다.
+   ========================================================================= */
+@keyframes rarBreathe {
+  0%, 100% { box-shadow: 0 0 6px var(--rg), 0 0 0 1px var(--rg) inset; }
+  50%      { box-shadow: 0 0 16px var(--rg), 0 0 2px var(--rg) inset; }
+}
+@keyframes rarSheen {
+  0%   { transform: translateX(-140%) skewX(-18deg); opacity: 0; }
+  12%  { opacity: .85; }
+  40%  { transform: translateX(240%) skewX(-18deg); opacity: 0; }
+  100% { transform: translateX(240%) skewX(-18deg); opacity: 0; }
+}
+@keyframes rarSparkle {
+  0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); }
+  50%      { opacity: 1; transform: scale(1) rotate(45deg); }
+}
+
+/* 뱃지 */
+.rar.rare  { --rg: rgba(167,99,216,.55); animation: rarBreathe 2.4s ease-in-out infinite; }
+.rar.relic { --rg: rgba(224,178,60,.6);  animation: rarBreathe 1.8s ease-in-out infinite;
+             background: linear-gradient(90deg, rgba(224,178,60,.12), rgba(224,178,60,.28), rgba(224,178,60,.12)); }
+
+/* 아이콘 (상점·보상·장비 시트) */
+.pick-icon { position: relative; overflow: hidden; }
+.pick-icon.rar-uncommon { box-shadow: 0 0 0 1px rgba(77,144,200,.35) inset; }
+.pick-icon.rar-rare  { --rg: rgba(167,99,216,.5); animation: rarBreathe 2.6s ease-in-out infinite;
+                       background: radial-gradient(ellipse at 50% 30%, #1d1426, #0d1014 70%); }
+.pick-icon.rar-relic { --rg: rgba(224,178,60,.65); animation: rarBreathe 1.9s ease-in-out infinite;
+                       background: radial-gradient(ellipse at 50% 30%, #2a2010, #0d1014 70%); }
+.pick-icon.rar-rare::after, .pick-icon.rar-relic::after {
+  content: ''; position: absolute; top: -20%; bottom: -20%; left: 0; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+  animation: rarSheen 3.2s ease-in-out infinite; pointer-events: none;
+}
+.pick-icon.rar-relic::after { animation-duration: 2.2s; background: linear-gradient(90deg, transparent, rgba(255,236,170,.6), transparent); }
+
+/* 진열 행 — 영웅/유물은 행 자체가 물든다 */
+.pick.r-uncommon { border-color: rgba(77,144,200,.45); }
+.pick.r-rare  { border-color: rgba(167,99,216,.6);
+                background: linear-gradient(90deg, rgba(167,99,216,.10), transparent 60%); }
+.pick.r-relic { border-color: rgba(224,178,60,.75);
+                background: linear-gradient(90deg, rgba(224,178,60,.14), transparent 60%);
+                box-shadow: 0 0 14px rgba(224,178,60,.18); position: relative; overflow: hidden; }
+.pick.r-relic::before, .pick.r-relic::after {
+  content: '✦'; position: absolute; color: #ffe9a8; font-size: 10px; pointer-events: none;
+  animation: rarSparkle 1.7s ease-in-out infinite; text-shadow: 0 0 6px #ffd76a;
+}
+.pick.r-relic::before { top: 6px; right: 12px; }
+.pick.r-relic::after  { bottom: 8px; right: 34px; animation-delay: .8s; }
+
+/* 전투 탄 카드 */
+.ammo-card { overflow: hidden; }
+.ammo-card.r-uncommon { border-color: rgba(77,144,200,.55); }
+.ammo-card.r-rare  { --rg: rgba(167,99,216,.55); border-color: rgba(167,99,216,.8);
+                     animation: rarBreathe 2.4s ease-in-out infinite;
+                     background: linear-gradient(165deg, #241a2e, #101317); }
+.ammo-card.r-relic { --rg: rgba(224,178,60,.7); border-color: rgba(224,178,60,.9);
+                     animation: rarBreathe 1.7s ease-in-out infinite;
+                     background: linear-gradient(165deg, #2c2210, #101317); }
+.ammo-card.r-rare::after, .ammo-card.r-relic::after {
+  content: ''; position: absolute; top: -30%; bottom: -30%; left: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+  animation: rarSheen 3s ease-in-out infinite; pointer-events: none;
+}
+.ammo-card.r-relic::after { animation-duration: 2s; background: linear-gradient(90deg, transparent, rgba(255,236,170,.55), transparent); }
+.ammo-card.r-relic .ammo-name { text-shadow: 0 0 8px rgba(255,215,106,.7); }
+.ammo-card.r-rare  .ammo-name { text-shadow: 0 0 8px rgba(187,133,232,.6); }
+.ammo-card.out { animation: none; }
+
+/* 부착물 랙 */
+.rack-slot { position: relative; overflow: hidden; }
+.rack-slot.r-rare  { --rg: rgba(167,99,216,.45); animation: rarBreathe 2.8s ease-in-out infinite; }
+.rack-slot.r-relic { --rg: rgba(224,178,60,.55); animation: rarBreathe 2s ease-in-out infinite; }
+.rack-slot.r-relic::after {
+  content: ''; position: absolute; top: -30%; bottom: -30%; left: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,236,170,.4), transparent);
+  animation: rarSheen 2.6s ease-in-out infinite; pointer-events: none;
+}
+.rack-slot.proc { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rar, .pick-icon, .pick, .ammo-card, .rack-slot,
+  .pick-icon::after, .pick::before, .pick::after, .ammo-card::after, .rack-slot::after { animation: none !important; }
+}

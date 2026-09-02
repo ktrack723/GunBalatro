@@ -7,7 +7,7 @@
 import type { Attachment, Loadout, Rarity, RunState, SlotKind } from '../../core/types'
 import { computeCap } from '../../core/pipeline'
 import { SPECIAL_BY_ID } from '../../core/data/specials'
-import { BASIC_DMG, BASIC_HEAT, SLOT_LABEL } from '../../core/types'
+import { BASIC_DMG, BASIC_HEAT, RARITY_LABEL, SLOT_LABEL } from '../../core/types'
 import { Bin, add, el, fmtInt, on } from '../dom'
 import { infoPop, isPopoverOpen } from '../popover'
 
@@ -116,21 +116,9 @@ export function statRow(parent: HTMLElement, k: string, v: string): HTMLElement 
 // 공용 조각
 // ===========================================================================
 
-const SLOT_NAME: Record<SlotKind, string> = {
-  barrel: '총열',
-  handguard: '총열덮개',
-  optic: '광학',
-  stock: '개머리판',
-  rail: '보조 레일',
-  magazine: '탄창',
-}
-
-const RARITY_NAME: Record<Rarity, string> = {
-  common: '일반',
-  uncommon: '희귀',
-  rare: '영웅',
-  relic: '유물',
-}
+// 부위·등급 이름은 core/types 가 단일 출처다 (화면마다 다르게 부르지 않기 위해)
+const SLOT_NAME = SLOT_LABEL
+const RARITY_NAME = RARITY_LABEL
 
 const RARITY_COLOR: Record<Rarity, string> = {
   common: '#7b828c',
@@ -165,7 +153,7 @@ export function rarityDots(r: Rarity): string {
 /** 탄 1발을 카드처럼 보여주는 .pick-icon (색맹 패턴을 위해 data-type 을 붙인다) */
 export function specialIcon(id: string): HTMLElement {
   const def = SPECIAL_BY_ID[id]
-  const box = el('div', 'pick-icon')
+  const box = el('div', 'pick-icon' + (def !== undefined ? ' rar-' + def.rarity : ''))
   const color = def?.color ?? '#8f9aa6'
   box.style.borderColor = color
   const t = add(box, 'div', 'card-type', def?.name.slice(0, 4) ?? '기본')
@@ -181,7 +169,7 @@ export function specialDesc(id: string): string {
 }
 
 export function attachmentIcon(a: Attachment): HTMLElement {
-  const box = el('div', 'pick-icon')
+  const box = el('div', 'pick-icon rar-' + a.rarity)
   box.style.borderColor = RARITY_COLOR[a.rarity]
   const g = add(box, 'div', 'card-type', SLOT_NAME[a.slot])
   g.style.color = RARITY_COLOR[a.rarity]
@@ -224,8 +212,8 @@ export function slotRows(l: Loadout): SlotRow[] {
     { label: SLOT_LABEL.magazine, att: l.magazine },
   ]
   for (let i = 0; i < 2; i += 1) {
-    if (i < l.railSlots) rows.push({ label: '레일 ' + (i + 1), att: l.rails[i] ?? null })
-    else rows.push({ label: '레일 ' + (i + 1), att: null, locked: true })
+    if (i < l.railSlots) rows.push({ label: SLOT_LABEL.rail + ' ' + (i + 1), att: l.rails[i] ?? null })
+    else rows.push({ label: SLOT_LABEL.rail + ' ' + (i + 1), att: null, locked: true })
   }
   return rows
 }
@@ -239,8 +227,11 @@ export function modsText(a: Attachment): string | null {
   if (m.startDist !== undefined) out.push('시작 거리 ' + (m.startDist > 0 ? '+' : '') + m.startDist + 'm')
   if (m.fireCost !== undefined) out.push('사격 비용 ' + (m.fireCost > 0 ? '+' : '') + m.fireCost + 'm')
   if (m.enemySpeed !== undefined) out.push('적 속도 ' + (m.enemySpeed > 0 ? '+' : '') + m.enemySpeed)
-  if (m.railSlots !== undefined) out.push('레일 +' + m.railSlots)
+  if (m.railSlots !== undefined) out.push('보조 광학 칸 +' + m.railSlots)
   if (m.startHeat !== undefined) out.push('시작 온도 +' + m.startHeat)
+  if (m.heatCarry !== undefined) {
+    out.push('온도 이월 ' + (m.heatCarry > 0 ? '+' : '') + Math.round(m.heatCarry * 100) + '%p')
+  }
   return out.length > 0 ? out.join(' · ') : null
 }
 
@@ -336,6 +327,7 @@ export function specialsList(l: Loadout): HTMLElement {
     add(body, 'div', 'pick-text', def.text)
     const meta = add(body, 'div', 'pick-meta')
     meta.appendChild(rarityTag(def.rarity))
+    add(meta, 'span', 'slotname', '특수탄 · DMG ' + def.dmg + ' · HEAT +' + def.heat.toFixed(2))
   }
   return box
 }
@@ -348,7 +340,7 @@ export function showLoadout(host: HTMLElement, run: RunState): Promise<void> {
   header(root, '장비', '섹터 ' + run.sector + ' · 탄피 ' + fmtInt(l.brass))
   root.appendChild(loadoutStrip(l, bin))
 
-  section(root, '부착물 6칸')
+  section(root, '부착물 — 5부위 + 보조 광학 2칸')
   const list = add(root, 'div', 'pick-grid')
   for (const r of slotRows(l)) {
     const row = add(list, 'div', 'pick')

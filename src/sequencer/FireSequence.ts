@@ -177,26 +177,35 @@ async function playShot(
     scene.setZoom(1.028)
   }
 
-  // 히트스톱이 도는 동안 숫자가 올라간다 — 멈춘 화면 위에 결과가 얹힌다
+  // 히트스톱이 도는 동안 숫자가 올라간다 — 멈춘 화면 위에 결과가 얹힌다.
+  //   리듬: 쏘고 → 숫자 → 아주 잠깐 멈춤 → 거의 바로 다음 발. 숫자가 사라지는
+  //   시간은 기다리지 않는다(다음 발의 비행 동안 알아서 지워진다).
   await showDamage(ev, d)
   if (scene !== null) scene.setZoom(1)
   d.view.setHeat(ev.heatAfter)
   d.view.setEnemyHp(ev.enemyHpAfter, s.enemy.maxHp)
   if (scene !== null) scene.gun.setHeat(ev.heatAfter)
-  await wait(70, sp)
+  await wait(55, sp)
 }
 
-/** 발라트로식 카운트업 — 칩 × 온도 → 합체 */
+/**
+ * 발라트로식 카운트업 — 칩 × 온도 → 합체.
+ *   예전엔 한 발당 200+190+90+120ms 를 전부 기다렸다(≈0.6초). 지금은 칩·합계가
+ *   각각 110/120ms 에 튀어나오고, 합계의 페이드는 기다리지 않는다 — 다음 발이
+ *   날아가는 동안 지워진다. 한 발의 체감 길이는 비행 + 숫자 + 55ms 멈춤이다.
+ */
 async function showDamage(ev: Extract<FireEvent, { t: 'shot' }>, d: SeqDeps): Promise<void> {
   const sp = d.speed()
   const host = d.view.viewportEl
+  // 아직 지워지는 중인 이전 합계는 즉시 치운다 — 숫자가 겹쳐 보이면 안 된다
+  for (const stale of Array.from(host.querySelectorAll('.dmg-total'))) stale.remove()
   const pop = add(host, 'div', 'dmg-pop')
   const chip = add(pop, 'div', 'dmg-chip', '0')
   add(pop, 'div', 'dmg-x', '×')
   const hv = add(pop, 'div', 'dmg-heat', ev.heatAfter.toFixed(2))
 
   await tween(
-    dur(200, sp),
+    dur(110, sp),
     (t) => {
       chip.textContent = String(Math.round(ev.dmg * t))
       const sc = (1.35 - 0.35 * t).toFixed(3)
@@ -210,7 +219,7 @@ async function showDamage(ev: Extract<FireEvent, { t: 'shot' }>, d: SeqDeps): Pr
 
   const tot = add(host, 'div', 'dmg-total', '0')
   await tween(
-    dur(190, sp),
+    dur(120, sp),
     (t) => {
       tot.textContent = String(Math.round(ev.damage * t))
       const sc = t < 0.55 ? 0.7 + 0.65 * (t / 0.55) : 1.35 - 0.35 * ((t - 0.55) / 0.45)
@@ -218,9 +227,12 @@ async function showDamage(ev: Extract<FireEvent, { t: 'shot' }>, d: SeqDeps): Pr
     },
     easeOut,
   )
-  await wait(90, sp)
-  await tween(dur(120, sp), (t) => { tot.style.opacity = String(1 - t) })
-  tot.remove()
+  // 페이드는 비동기 — 다음 발을 막지 않는다
+  void (async (): Promise<void> => {
+    await wait(140, sp)
+    await tween(dur(160, sp), (t) => { tot.style.opacity = String(1 - t) })
+    tot.remove()
+  })()
 }
 
 // ---------------------------------------------------------------------------

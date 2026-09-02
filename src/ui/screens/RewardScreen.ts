@@ -2,6 +2,7 @@
 import type { RewardItem, RunState } from '../../core/types'
 import { applyReward } from '../../core/run'
 import { skipRewardBrass } from '../../core/economy'
+import { SLOT_LABEL } from '../../core/types'
 import { add, fmtInt, on } from '../dom'
 import { toast } from '../toast'
 import {
@@ -40,7 +41,7 @@ export function showRewards(
 
     const grid = add(root, 'div', 'pick-grid')
     items.forEach((item, i) => {
-      const row = add(grid, 'div', 'pick')
+      const row = add(grid, 'div', 'pick r-' + (item.t === 'attachment' ? item.attachment.rarity : item.special.rarity))
 
       if (item.t === 'attachment') {
         const a = item.attachment
@@ -50,7 +51,7 @@ export function showRewards(
         add(body, 'div', 'pick-text', a.text)
         const meta = add(body, 'div', 'pick-meta')
         meta.appendChild(rarityTag(a.rarity))
-        add(meta, 'span', 'slotname', a.slot)
+        add(meta, 'span', 'slotname', '부착물 · ' + SLOT_LABEL[a.slot])
         const m = modsText(a)
         if (m !== null) {
           const line = add(body, 'div', 'pick-text', m)
@@ -64,7 +65,7 @@ export function showRewards(
         add(body, 'div', 'pick-text', def.text)
         const meta = add(body, 'div', 'pick-meta')
         meta.appendChild(rarityTag(def.rarity))
-        add(meta, 'span', 'slotname', 'DMG ' + def.dmg + ' · HEAT +' + def.heat.toFixed(2))
+        add(meta, 'span', 'slotname', '특수탄 · DMG ' + def.dmg + ' · HEAT +' + def.heat.toFixed(2))
       }
 
       bin.add(
