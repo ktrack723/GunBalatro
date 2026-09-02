@@ -539,7 +539,7 @@ export class App {
       sc.fx.clearScreenEffects()
       sc.fx.setVignette(BASE_VIGNETTE)
       sc.fx.setTint(1, 1, 1)
-      sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id)
+      sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0)
       sc.enemy.setDistance(s.distance, enemy.startDist, false)
       sc.gun.resetHeat(s.heat)
       // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)

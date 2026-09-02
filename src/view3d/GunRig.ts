@@ -128,6 +128,27 @@ function buildMagGeometry(cap: number): THREE.BufferGeometry {
   return merged
 }
 
+/** 부드러운 방사형 글로우 텍스처 — 가장자리 알파 0 */
+function makeGlowTexture(size = 128): THREE.Texture | null {
+  if (typeof document === 'undefined') return null
+  const cv = document.createElement('canvas')
+  cv.width = size
+  cv.height = size
+  const g = cv.getContext('2d')
+  if (!g) return null
+  const c = size / 2
+  const grad = g.createRadialGradient(c, c, 0, c, c, c)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.28, 'rgba(255,255,255,0.55)')
+  grad.addColorStop(0.62, 'rgba(255,255,255,0.12)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, size, size)
+  const t = new THREE.CanvasTexture(cv)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 export class GunRig {
   /** 카메라에 붙일 최상위 노드. 위치는 GameScene.resize() 가 잡아준다 */
   readonly object = new THREE.Group()
@@ -211,9 +232,12 @@ export class GunRig {
       color: 0xff3a30, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     })
+    // 텍스처 없는 additive 평면은 **테두리가 선 직사각형**으로 보였다 — 반동 펄스가
+    // 매 발 불투명도를 올려서 쏠 때마다 총 위에 납작한 네모가 떴다. 방사형 알파로
+    // 가장자리를 0 까지 죽인다.
     this.glowMat = new THREE.MeshBasicMaterial({
-      color: 0xff9a3c, transparent: true, opacity: 0,
-      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+      color: 0xff9a3c, transparent: true, opacity: 0, map: makeGlowTexture(),
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false,
     })
 
     // --- 강철부 (수신부·개머리·손잡이·광학) ---
@@ -276,7 +300,7 @@ export class GunRig {
     this.parts.add(dot)
 
     // 백열 이상에서 켜지는 볼륨 글로우 (광원 아님 — additive 평면)
-    this.glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.22), this.glowMat)
+    this.glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.30), this.glowMat)
     this.glowMesh.position.set(0, -0.028, -0.50)
     this.glowMesh.renderOrder = 12
     this.parts.add(this.glowMesh)

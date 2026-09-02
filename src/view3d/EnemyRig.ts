@@ -24,7 +24,7 @@ const MAX_EYES = 9
 
 /** 거리(m) → 카메라 전방 z. 30m 은 멀리, 0m 은 코앞 */
 export function distanceToZ(meters: number): number {
-  return -(Math.max(0, meters) * 0.55 + 1.2)
+  return -(Math.max(0, meters) * 0.72 + 1.2)
 }
 
 // --- 지오메트리 헬퍼 ---------------------------------------------------------
@@ -144,6 +144,12 @@ interface Body {
   scale: number
   yaw: number
   shake: number
+  /** 개체별 체형 변주 — 같은 아키타입이라도 둘이 같지 않다 */
+  wideMul: number
+  tallMul: number
+  legMul: number
+  hunch: number
+  eyes: number
   /** 다리별 위상 (교대 보행) */
   legPhase: number[]
 }
@@ -159,6 +165,9 @@ export class EnemyRig {
   private readonly eyeMat: THREE.MeshBasicMaterial
 
   private rng: ViewRng = makeViewRng(0x2b1e)
+  private bodyVariants: THREE.BufferGeometry[] = []
+  private legVariants: THREE.BufferGeometry[] = []
+  private spawnSerial = 0
   private readonly bodies: Body[] = []
   private params: ArchParams = archParams('shambler')
   private count = 1
@@ -168,7 +177,7 @@ export class EnemyRig {
   private zFrom = this.z
   private zTo = this.z
   private tweenT = 1
-  private readonly TWEEN = 0.6
+  private readonly TWEEN = 0.42
   private nearness = 0
 
   // 상태
@@ -212,6 +221,40 @@ export class EnemyRig {
     const bodyGeo = mergeGeometries(bodyParts)!
     for (const g of bodyParts) g.dispose()
 
+    // --- 체형 변종 --------------------------------------------------------
+    //   인스턴싱은 개체별 지오메트리를 못 바꾸지만 **스폰마다** 지오메트리를 갈아
+    //   끼울 수는 있다. 세 가지 갑각 × 두 가지 다리 = 여섯 실루엣.
+    //   ② 가시 등: 등판을 따라 가시 줄이 선다 — 손전등에 잔털처럼 걸린다
+    const spined: THREE.BufferGeometry[] = [bodyGeo.clone()]
+    for (let i = 0; i < 7; i++) {
+      const z = 0.12 - i * 0.10
+      const h = 0.14 + Math.sin(i * 1.3) * 0.05
+      spined.push(limb(0, 0.16, 0.02, 0.16 + h, 0.022, 0.003).translate(0, 0, z))
+      spined.push(limb(0, 0.14, 0.13, 0.14 + h * 0.7, 0.016, 0.003).translate(0, 0, z + 0.03))
+      spined.push(limb(0, 0.14, -0.13, 0.14 + h * 0.7, 0.016, 0.003).translate(0, 0, z + 0.03))
+    }
+    const bodySpined = mergeGeometries(spined)!
+    for (const g of spined) g.dispose()
+    //   ③ 여윈 것: 배가 길고 납작하며 줄기가 길다 — 굶은 실루엣
+    const gaunt: THREE.BufferGeometry[] = [
+      blob(0.26, 1.0, 0.42, 1.1, 0, 0, 0.10),
+      blob(0.24, 1.0, 0.55, 2.4, 0, -0.04, -0.62),
+      blob(0.13, 1.0, 0.6, 1.0, 0, 0.06, -0.16),
+      blob(0.10, 1.4, 0.5, 1.2, 0, 0.12, -0.50),
+      limb(0.08, 0.0, 0.20, -0.18, 0.024, 0.005).translate(0, -0.02, 0.32),
+      limb(-0.08, 0.0, -0.20, -0.18, 0.024, 0.005).translate(0, -0.02, 0.32),
+    ]
+    const gauntStalks: Array<[number, number, number, number, number, number]> = [
+      [0, 0.12, 0.26, 0, 0.42, 0.34],
+      [-0.11, 0.08, 0.24, -0.24, 0.32, 0.30],
+      [0.11, 0.08, 0.24, 0.24, 0.32, 0.30],
+      [0, 0.14, 0.0, 0, 0.36, -0.14],
+    ]
+    for (const [x, y, z, ax, ay, az] of gauntStalks) gaunt.push(stalk(x, y, z, ax, ay, az, 0.028))
+    const bodyGaunt = mergeGeometries(gaunt)!
+    for (const g of gaunt) g.dispose()
+    this.bodyVariants = [bodyGeo, bodySpined, bodyGaunt]
+
     // --- 다리 한 짝 (엉덩이 관절이 원점, +X 로 뻗는다) ---------------------
     //   무릎이 몸보다 **위로** 솟는다. 거미가 무서운 이유는 이 아치다.
     const legParts: THREE.BufferGeometry[] = [
@@ -226,6 +269,20 @@ export class EnemyRig {
     ]
     const legGeo = mergeGeometries(legParts)!
     for (const g of legParts) g.dispose()
+    //   바늘 다리: 가늘고 길며 정강이에 가시가 하나 더 — 거미보다 사마귀에 가깝다
+    const needleParts: THREE.BufferGeometry[] = [
+      blob(0.06, 1, 1, 1, 0.02, 0.02, 0),
+      limb(0.02, 0.02, 0.44, 0.44, 0.046, 0.028),
+      blob(0.042, 1, 1, 1, 0.44, 0.44, 0),
+      limb(0.44, 0.44, 0.74, -0.66, 0.028, 0.010),
+      limb(0.74, -0.66, 0.80, -0.80, 0.010, 0.003),
+      limb(0.56, -0.10, 0.63, -0.02, 0.012, 0.002),
+      limb(0.64, -0.36, 0.72, -0.30, 0.010, 0.002),
+      limb(0.33, 0.34, 0.36, 0.52, 0.014, 0.003),
+    ]
+    const legNeedle = mergeGeometries(needleParts)!
+    for (const g of needleParts) g.dispose()
+    this.legVariants = [legGeo, legNeedle]
 
     // --- 머티리얼 ----------------------------------------------------------
     //   검은 각질. roughness 를 낮게 잡아 **젖은 하이라이트**가 서게 한다 —
@@ -233,8 +290,10 @@ export class EnemyRig {
     //   metalness 를 높게 잡는 것이 핵심이다. 금속 워크플로에서는 확산광이 거의 0 이라
     //   손전등을 바로 맞아도 **면 전체가 밝아지지 않고** 가장자리 하이라이트만 선다.
     //   metalness 가 낮으면 근거리에서 회백색으로 떠 버려 "검은색" 요구가 깨진다.
+    //   기본색은 조금 밝게 두고 **개체 색(instanceColor)** 으로 곱해 내린다 —
+    //   재·핏빛·올리브·뼈빛 네 계열의 '검정'. 결과는 모두 0x0c 근처의 어둠이다.
     this.mat = new THREE.MeshStandardMaterial({
-      color: 0x090a0d,
+      color: 0x16181d,
       roughness: 0.46,
       metalness: 0.72,
       emissive: new THREE.Color(0x000000),
@@ -265,10 +324,43 @@ export class EnemyRig {
   }
 
   // -------------------------------------------------------------------------
-  spawn(bodyCount: number, archetypeId: string): void {
+  /**
+   * @param variantSeed 스폰마다 다른 값(런 난수 상태 등). 같은 아키타입을 두 번
+   *   만나도 체형·색·눈이 다르다. 없으면 스폰 순번을 쓴다.
+   */
+  spawn(bodyCount: number, archetypeId: string, variantSeed?: number): void {
     this.count = THREE.MathUtils.clamp(Math.floor(bodyCount) || 1, 1, MAX_BODIES)
     this.params = archParams(archetypeId)
-    this.rng = makeViewRng(viewSeedOf(archetypeId) ^ (this.count * 2654435761))
+    this.spawnSerial += 1
+    const vs = (variantSeed ?? this.spawnSerial * 7919) >>> 0
+    this.rng = makeViewRng((viewSeedOf(archetypeId) ^ (this.count * 2654435761) ^ (vs * 40503)) >>> 0)
+    const P = this.params
+
+    // 체형 변종 — 거상은 가시 등을 선호하고, 주자/추적자는 여윈 것을 선호한다
+    const bodyPick = this.rng.next()
+    const bodyIdx =
+      archetypeId === 'colossus' ? (bodyPick < 0.7 ? 1 : 0)
+        : archetypeId === 'runner' || archetypeId === 'stalker' ? (bodyPick < 0.6 ? 2 : bodyPick < 0.8 ? 0 : 1)
+          : bodyPick < 0.45 ? 0 : bodyPick < 0.75 ? 1 : 2
+    const legIdx = archetypeId === 'crawler' || archetypeId === 'bloat' ? 0 : this.rng.next() < 0.45 ? 1 : 0
+    const bg = this.bodyVariants[bodyIdx]
+    const lg = this.legVariants[legIdx]
+    if (bg !== undefined) this.bodyMesh.geometry = bg
+    if (lg !== undefined) this.legMesh.geometry = lg
+
+    // 안광 색 — 붉음이 기본이되 호박·병든 초록·창백한 푸름이 섞인다
+    const EYES = [0xff2f1e, 0xff2f1e, 0xffa424, 0x9cff3a, 0x8fd6ff, 0xff6ad0]
+    this.eyeMat.color.setHex(EYES[this.rng.int(EYES.length)] ?? 0xff2f1e)
+
+    // 개체 색 계열 (전부 어둡다 — '검은 것' 은 지킨다)
+    const TINTS: Array<[number, number, number]> = [
+      [0.55, 0.55, 0.62], // 재
+      [0.62, 0.26, 0.28], // 핏빛
+      [0.40, 0.50, 0.30], // 올리브
+      [0.70, 0.64, 0.52], // 뼈빛
+      [0.32, 0.36, 0.60], // 멍든 푸름
+    ]
+    const tint = TINTS[this.rng.int(TINTS.length)] ?? TINTS[0]!
     this.bodies.length = 0
     for (let i = 0; i < this.count; i++) {
       const solo = this.count === 1
@@ -285,9 +377,18 @@ export class EnemyRig {
         scale: this.params.scale * this.rng.range(0.94, 1.06),
         yaw: this.rng.range(-0.14, 0.14),
         shake: 0,
+        wideMul: this.rng.range(0.82, 1.22),
+        tallMul: this.rng.range(0.85, 1.18),
+        legMul: this.rng.range(0.86, 1.20),
+        hunch: this.rng.range(-0.10, 0.22),
+        eyes: THREE.MathUtils.clamp(3 + P.heads * 2 + this.rng.int(5) - 2, 2, MAX_EYES),
         legPhase,
       })
+      // 개체 색 — 계열 안에서 조금씩 흔든다
+      const k = this.rng.range(0.85, 1.15)
+      this.bodyMesh.setColorAt(i, new THREE.Color(tint[0] * k, tint[1] * k, tint[2] * k))
     }
+    if (this.bodyMesh.instanceColor !== null) this.bodyMesh.instanceColor.needsUpdate = true
     this.bodyMesh.count = this.count
     this.legMesh.count = this.count * this.params.legs
     this.eyeMesh.count = this.count * MAX_EYES
@@ -445,11 +546,11 @@ export class EnemyRig {
 
       // --- 갑각 ---
       this._p.set(bx, by, bz)
-      this._e.set(0.05 + collapse * 0.5, b.yaw, tRoll + Math.sin(w + b.phase) * 0.04)
+      this._e.set(0.05 + b.hunch + collapse * 0.5, b.yaw, tRoll + Math.sin(w + b.phase) * 0.04)
       this._q.setFromEuler(this._e)
       this._s.set(
-        s * P.wide * (1 + squash * 0.5),
-        s * (1 - dieP * 0.3) * (1 - squash),
+        s * P.wide * b.wideMul * (1 + squash * 0.5),
+        s * b.tallMul * (1 - dieP * 0.3) * (1 - squash),
         s * (1 + squash * 0.3),
       )
       this._m.compose(this._p, this._q, this._s)
@@ -483,7 +584,7 @@ export class EnemyRig {
           gait * 0.20 + legTrem * 1.6 - collapse * 1.25 - b.shake * 0.42,
         )
         this._q.setFromEuler(this._e)
-        const ls = s * P.legLen
+        const ls = s * P.legLen * b.legMul
         this._s.set(ls, ls, ls)
         this._m.compose(this._p, this._q, this._s)
         this.legMesh.setMatrixAt(legI, this._m)
@@ -495,15 +596,15 @@ export class EnemyRig {
       //   먼 거리에서는 개별 눈이 1px 이하로 뭉개지므로, 거리가 멀수록 조금 키운다.
       const far = 1 - this.nearness
       const eyeBoost = 1 + far * 2.2
-      const eyesOn = Math.min(MAX_EYES, 3 + P.heads * 2)
+      const eyesOn = Math.min(MAX_EYES, b.eyes)
       for (let k = 0; k < MAX_EYES; k++) {
         const [ex, ey, ez, esz] = EYE_LOCAL[k]!
         // 머리 줄기 수가 적은 아키타입은 바깥쪽 눈을 끈다 (스케일 0)
         const on = k < eyesOn
         const blink = 0.86 + 0.14 * Math.sin(this.t * (2.3 + k * 0.4) + b.phase * 2)
         this._p.set(
-          bx + ex * s * P.wide,
-          by + ey * s,
+          bx + ex * s * P.wide * b.wideMul,
+          by + ey * s * b.tallMul,
           bz + ez * s,
         )
         this._e.set(0, b.yaw * 0.5, tRoll * 0.5)
@@ -527,8 +628,8 @@ export class EnemyRig {
   }
 
   dispose(): void {
-    this.bodyMesh.geometry.dispose()
-    this.legMesh.geometry.dispose()
+    for (const g of this.bodyVariants) g.dispose()
+    for (const g of this.legVariants) g.dispose()
     this.eyeMesh.geometry.dispose()
     this.bodyMesh.dispose()
     this.legMesh.dispose()

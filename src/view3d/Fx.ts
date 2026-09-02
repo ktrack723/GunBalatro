@@ -83,6 +83,57 @@ interface FlashSlot {
 }
 
 /** 총구 플래시용 절차 텍스처 (3프레임 중 1장). 에셋 파일 없이 캔버스로 만든다. */
+/**
+ * 탄두 점 — 방사형 알파. 텍스처 없는 additive 사각형은 총구 앞에서 **납작한 흰 네모**로
+ * 보였다(첫 몇 프레임은 탄이 총구에 붙어 있어 총 위에 뜬 것처럼 읽힌다).
+ */
+function makeDotTexture(size = 64): THREE.Texture {
+  if (typeof document === 'undefined') return new THREE.Texture()
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = size
+  const g = cv.getContext('2d')
+  if (!g) return new THREE.Texture()
+  const c = size / 2
+  const grad = g.createRadialGradient(c, c, 0, c, c, c)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.30, 'rgba(255,255,255,0.9)')
+  grad.addColorStop(0.60, 'rgba(255,255,255,0.25)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, size, size)
+  const t = new THREE.CanvasTexture(cv)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
+/** 탄 꼬리 — 뒤(u=0)는 투명, 머리 쪽(u=1)은 밝고, 위아래 가장자리는 부드럽다 */
+function makeTrailTexture(w = 64, h = 16): THREE.Texture {
+  if (typeof document === 'undefined') return new THREE.Texture()
+  const cv = document.createElement('canvas')
+  cv.width = w
+  cv.height = h
+  const g = cv.getContext('2d')
+  if (!g) return new THREE.Texture()
+  const img = g.createImageData(w, h)
+  for (let y = 0; y < h; y++) {
+    const v = Math.abs((y + 0.5) / h - 0.5) * 2 // 0 중앙 → 1 가장자리
+    const edge = Math.max(0, 1 - v * v * 1.15)
+    for (let x = 0; x < w; x++) {
+      const u = (x + 0.5) / w
+      const a = Math.pow(u, 1.6) * edge
+      const i = (y * w + x) * 4
+      img.data[i] = 255
+      img.data[i + 1] = 255
+      img.data[i + 2] = 255
+      img.data[i + 3] = Math.round(a * 255)
+    }
+  }
+  g.putImageData(img, 0, 0)
+  const t = new THREE.CanvasTexture(cv)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 function makeFlashTexture(rng: ViewRng, size = 96): THREE.Texture {
   if (typeof document === 'undefined') return new THREE.Texture()
   const cv = document.createElement('canvas')
@@ -300,14 +351,16 @@ export class Fx {
     // 탄환 풀 — 머리(빌보드 점) + 짧은 꼬리(선분)
     const bHeadGeo = new THREE.PlaneGeometry(1, 1)
     const bTrailGeo = new THREE.PlaneGeometry(1, 1)
+    const dotTex = makeDotTexture()
+    const trailTex = makeTrailTexture()
     for (let i = 0; i < BULLET_POOL; i++) {
       const headMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 1,
+        color: 0xffffff, transparent: true, opacity: 1, map: dotTex,
         blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false,
         toneMapped: false,
       })
       const trailMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 1,
+        color: 0xffffff, transparent: true, opacity: 1, map: trailTex,
         blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false,
         side: THREE.DoubleSide, toneMapped: false,
       })
@@ -799,7 +852,7 @@ export class Fx {
         b.head.position.copy(head)
         b.head.quaternion.copy(camera.quaternion)
         const dist = this._v2.copy(camera.position).sub(head).length()
-        b.head.scale.setScalar(Math.min(0.13, 0.018 + dist * 0.0045))
+        b.head.scale.setScalar(Math.min(0.16, 0.024 + dist * 0.0055))
       }
 
       // 꼬리 — 짧다. 선이 아니라 '흔적' 이어야 한다.

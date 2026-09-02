@@ -23,6 +23,7 @@ import {
 // ---------------------------------------------------------------------------
 // 아키타입 (BALANCE.md §3 "아키타입 · 위험도 보정" 표와 1:1)
 //   행동 수 = floor(D0 / S) — 이 값이 전투의 성격을 결정한다.
+//   R12 페이싱: 위험도 1 기준 3~5 행동. '네다섯 턴 끌면 죽는다' 가 규칙이다.
 // ---------------------------------------------------------------------------
 
 const SHAMBLER: EnemyArchetype = {
@@ -30,7 +31,7 @@ const SHAMBLER: EnemyArchetype = {
   name: '배회자',
   hpMul: 1.0,
   speed: 5,
-  startDist: 30,
+  startDist: 26,
   flavor: '느리지만 멈추지 않는다. 모든 계산의 기준선.',
 }
 
@@ -39,7 +40,7 @@ const RUNNER: EnemyArchetype = {
   name: '주자',
   hpMul: 0.55,
   speed: 10,
-  startDist: 32,
+  startDist: 30,
   flavor: '어둠 속에서 갑자기 속도를 올린다. 세 번이면 끝난다.',
 }
 
@@ -47,8 +48,8 @@ const BLOAT: EnemyArchetype = {
   id: 'bloat',
   name: '비대체',
   hpMul: 1.8,
-  speed: 3,
-  startDist: 26,
+  speed: 4,
+  startDist: 22,
   flavor: '부푼 몸이 복도를 메운다. 오래 예열할 시간을 준다.',
 }
 
@@ -57,7 +58,7 @@ const HORDE: EnemyArchetype = {
   name: '무리',
   hpMul: 1.3,
   speed: 6,
-  startDist: 34,
+  startDist: 30,
   flavor: '여럿이 한 덩어리로 밀려온다. 연출은 다수, 규칙은 하나.',
 }
 
@@ -66,7 +67,7 @@ const CRAWLER: EnemyArchetype = {
   name: '기어다니는 것',
   hpMul: 0.7,
   speed: 4,
-  startDist: 18,
+  startDist: 16,
   flavor: '바닥을 기어 이미 코앞이다. 근거리 부착물이 깨어난다.',
 }
 
@@ -79,7 +80,7 @@ const STALKER: EnemyArchetype = {
   name: '추적자',
   hpMul: 1.15,
   speed: 8,
-  startDist: 38,
+  startDist: 34,
   flavor: '발소리가 없다. 눈을 뗀 사이에 반쯤 와 있다.',
 }
 
@@ -91,7 +92,7 @@ const COLOSSUS: EnemyArchetype = {
   id: 'colossus',
   name: '거상',
   hpMul: 2.6,
-  speed: 3,
+  speed: 4,
   startDist: 22,
   flavor: '천장을 긁으며 온다. 복도가 좁아지는 게 아니라 저게 커지는 것이다.',
 }
@@ -322,7 +323,7 @@ export const PASSIVE_BY_ID: Record<string, EnemyPassive> = (() => {
 // HP 곡선 (BALANCE.md §3)
 //   HP(sector, node) = HP_BASE × HP_GROWTH^(sector-1) × nodeMul  (상수는 types.ts)
 //   엔드리스(섹터 9+)는 8섹터까지 HP_GROWTH, 그 이후 구간만 HP_ENDLESS_GROWTH 를 곱한다.
-//   난이도 상향(R10): 380 × 1.91^(s-1), big 1.8 / boss 2.2, 위험도 1.05/1.35/3.5.
+//   난이도 상향(R10) 380 → 페이싱(R12) 320 × 1.91^(s-1), big 1.8 / boss 2.2, 위험도 1.05/1.35/3.5.
 // ---------------------------------------------------------------------------
 
 const LAST_SECTOR = 8
