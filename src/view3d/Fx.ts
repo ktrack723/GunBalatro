@@ -463,6 +463,11 @@ export class Fx {
     }
   }
 
+  /** 접근성 흔들림 강도 그대로 (1=강 / 0.3=약 / 0=끔). Scene 의 급브레이크가 곱해 쓴다 */
+  get shakeScale(): number {
+    return this.shakeI
+  }
+
   private get distOn(): boolean {
     return this.distortion && this.distortionQ
   }

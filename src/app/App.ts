@@ -24,13 +24,13 @@ import {
   currentNode,
   enterDoor,
   newRun,
+  previewStartDistance,
   reliquaryStock,
   rollDoors,
   rollRewardRoom,
   runRng,
 } from '../core/run'
 import { fire, settleSpecials, startCombat } from '../core/combat'
-import { computeStartDistance } from '../core/pipeline'
 import { combatBrass } from '../core/economy'
 import { pickDerelict } from '../core/data/events'
 
@@ -45,7 +45,7 @@ import {
   subscribeSettings,
 } from '../ui/settings'
 import { toast } from '../ui/toast'
-import { setSfxEnabled } from '../audio/Sfx'
+import { setSfxEnabled, sfx } from '../audio/Sfx'
 import { add, el, on } from '../ui/dom'
 import { CombatView, showSwapSheet } from '../ui/CombatView'
 import { showTitle } from '../ui/screens/TitleScreen'
@@ -73,8 +73,13 @@ import { makeViewRng, viewSeedOf, type ViewRng } from '../view3d/postShader'
 /** 이동 구간 길이 (PRESENTATION §5) */
 const TRAVEL_MIN = 1.75
 const TRAVEL_MAX = 3
-/** 문을 열고 들어가는 짧은 구간 */
-const DOOR_TRAVEL = 1.1
+/**
+ * 문을 열고 들어가는 구간.
+ *   전투 직전 구간이라 여기서 복도 저편의 적이 안개에서 드러난다. 1.1초는
+ *   46m 를 지나가기에는 너무 짧아 안광이 보이자마자 전투가 시작됐다 —
+ *   "적을 보고 멈춘다"가 성립하려면 보고 나서 달릴 시간이 있어야 한다.
+ */
+const DOOR_TRAVEL = 1.6
 /** 포스트 셰이더 비네트 기본값 (PostPass 생성자와 같은 값 — '어둠이 예산이다') */
 const BASE_VIGNETTE = 0.42
 /** 전투 노드에서 고를 복도 종류 (core 에 NodeKind→CorridorKind 매핑이 없어 view 가 정한다) */
@@ -318,25 +323,24 @@ export class App {
       const idx = await this.doorChoice(run, doors)
       this.scene?.corridor.hideDoors()
       const door = doors[idx] as DoorOption | undefined
-      // 적을 **이동 전에** 만든다. 그래야 복도 끝에 미리 세워 둘 수 있다 —
-      // 걸어가는 동안 저 끝에 실루엣이 서 있고, 도착하면 그게 그대로 전투 상대다.
+      // 문 뒤에 무엇이 있는지는 이 시점에 이미 정해져 있다 (enterDoor 는 캐시된
+      // rollDoors 를 읽는 순수 함수다). 이동을 **시작하기 전에** 꺼내 두어야
+      // 복도 저편에 그 적을 미리 세울 수 있다 — 적은 전투가 시작될 때 생기는
+      // 것이 아니라 처음부터 거기 서 있어야 한다.
       const r = enterDoor(run, idx)
-      this.previewEnemy(run, r.enemy)
-      await this.travel(run, node, 1, door?.archetype ?? null, DOOR_TRAVEL)
+      await this.travel(run, node, 1, door?.archetype ?? null, DOOR_TRAVEL, r.enemy)
       if (r.enemy === null) return true
-      return await this.combatNode(run, r.enemy, r.threat, true)
+      return await this.combatNode(run, r.enemy, r.threat)
     }
 
     if (node === 'boss') {
       const r = enterDoor(run, 0)
-      this.previewEnemy(run, r.enemy)
-      await this.travel(run, node, 0, null)
+      await this.travel(run, node, 0, null, undefined, r.enemy)
       if (r.enemy === null) return true
-      return await this.combatNode(run, r.enemy, r.threat, true)
+      return await this.combatNode(run, r.enemy, r.threat)
     }
 
     // --- 상점 / 성소 / 폐허 ---
-    this.scene?.clearPreview()
     await this.travel(run, node, 0, null)
     enterDoor(run, 0) // run.current 를 맞춰 준다 (적은 없다)
     this.idleScene()
@@ -373,12 +377,22 @@ export class App {
     return rng.pick(COMBAT_KINDS)
   }
 
+  /**
+   * 적 스폰 변주 seed. 이동 구간에서 미리 세울 때와 전투가 시작될 때 **같은 값**이
+   * 나와야 같은 생물이 유지된다 (EnemyRig.spawn 이 같은 인자면 무시한다).
+   * 그 사이에 run.rngState 를 건드리는 것은 아무것도 없다 — enterDoor 도, startCombat 도.
+   */
+  private enemyViewSeed(run: RunState): number {
+    return (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0
+  }
+
   private async travel(
     run: RunState,
     node: NodeKind,
     leg: number,
     hint: string | null,
     fixedSeconds?: number,
+    ahead: EnemyInstance | null = null,
   ): Promise<void> {
     const sc = this.scene
     const rng = this.viewRng(run, leg)
@@ -387,9 +401,22 @@ export class App {
     // 연출 속도 설정을 그대로 존중한다 (즉시 = 이동 생략)
     const secs = !Number.isFinite(sp) ? 0 : base / clamp(sp, 1, 3)
 
+    // 이 구간 끝에서 만날 적을 복도 저편에 미리 세운다. 레일을 깐 **뒤**라야
+    // 끝점을 알 수 있으므로 continueTravel/startTravel 다음에 부른다.
+    const stage = (): void => {
+      if (sc === null || ahead === null) return
+      sc.stageEnemyAhead(
+        ahead.bodyCount,
+        ahead.archetype.id,
+        this.enemyViewSeed(run),
+        previewStartDistance(run, ahead),
+      )
+    }
+
     if (sc === null || secs <= 0.05) {
       if (sc !== null) {
         sc.continueTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), 0.35, hint)
+        stage()
         sc.rail.skip()
       }
       return
@@ -399,6 +426,7 @@ export class App {
     // leg 1 = 문을 지나 다음 복도로. 카메라를 원점으로 되돌리지 않고 이어 붙인다.
     if (leg === 1) sc.continueTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
     else sc.startTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
+    stage()
     this.mountTravelOverlay(leg === 1 ? '문 안쪽으로' : '이동 중')
     await this.waitFrames(() => sc.rail.finished, secs * 4 + 8)
     this.unmountTravelOverlay()
@@ -519,22 +547,10 @@ export class App {
   // 전투
   // =========================================================================
 
-  /** 복도 끝에 적을 미리 세운다 (이동 구간 내내 보인다) */
-  private previewEnemy(run: RunState, enemy: EnemyInstance | null): void {
-    const sc = this.scene
-    if (sc === null || enemy === null) return
-    sc.previewEnemy(
-      enemy.archetype.id,
-      (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0,
-      computeStartDistance(run.loadout, enemy),
-    )
-  }
-
   private async combatNode(
     run: RunState,
     enemy: EnemyInstance,
     threat: Threat,
-    previewed = false,
   ): Promise<boolean> {
     const mods = consumeCombatMods(run)
     const s = startCombat(run.loadout, enemy, runRng(run), mods)
@@ -547,7 +563,9 @@ export class App {
     })
     this.view = view
     view.render(s)
-    this.syncInsets()
+    // 시선축이 화면 중앙(이동)에서 위쪽 띠 중앙(전투)으로 옮겨간다 — 급브레이크와
+    // 같은 0.25초 동안 미끄러뜨린다. 한 프레임에 바꾸면 이미 보이는 적이 위로 튄다.
+    this.syncInsets(true)
 
     const sc = this.scene
     if (sc !== null) {
@@ -556,16 +574,15 @@ export class App {
       sc.fx.clearScreenEffects()
       sc.fx.setVignette(BASE_VIGNETTE)
       sc.fx.setTint(1, 1, 1)
-      // 미리 세워 둔 개체를 그대로 쓴다 — 여기서 다시 spawn 하면 체형·색이 바뀌어
-      // 걸어오며 보던 그 실루엣이 딴것으로 갈리고, 그게 곧 '튀어나옴' 이다.
-      if (!previewed) {
-        sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0)
-      }
-      // 미리보기 거리와 실제 시작 거리가 응급 보급 등으로 어긋나면 스르륵 맞춘다
-      sc.enemy.setDistance(s.distance, enemy.startDist, previewed)
+      // 이동 중에 미리 세워 뒀다면 같은 인자라 무시된다 (생물이 바뀌지 않는다)
+      sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, this.enemyViewSeed(run))
+      sc.enemy.setDistance(s.distance, enemy.startDist, false)
       sc.gun.resetHeat(s.heat)
       // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)
       sc.gun.setMagazineCap(s.cap)
+      // 발을 끄는 소리 — 화면이 크게 흔들리는 이유를 귀로도 알려 준다
+      sfx('skid', 1, 0)
+      haptic(24)
     }
 
     // 꾹 눌러 설명 보기는 눌러 보기 전에는 알 수 없다 — 세션당 한 번만 알려준다
@@ -661,7 +678,6 @@ export class App {
   }
 
   private teardownCombat(): void {
-    this.scene?.clearPreview()
     if (this.view !== null) {
       this.view.destroy()
       this.view = null
@@ -733,7 +749,7 @@ export class App {
     root.setProperty('--fx-right', Math.max(0, Math.round(rightPx)) + 'px')
   }
 
-  syncInsets(): void {
+  syncInsets(animate = false): void {
     const sc = this.scene
     const w = Math.max(1, this.canvas.clientWidth || window.innerWidth)
     const h = Math.max(1, this.canvas.clientHeight || window.innerHeight)
@@ -742,7 +758,7 @@ export class App {
     // 전투 화면이 아니면 연출 레이어는 화면 전체를 쓴다 (즉사 연출 등).
     if (row === null) {
       this.setFxClip(0, 0)
-      if (sc !== null) sc.setViewportInsets(0.45, 0.4)
+      if (sc !== null) sc.setViewportInsets(0.45, 0.4, animate)
       return
     }
     if (sc === null) {
@@ -758,18 +774,18 @@ export class App {
     if (landscape && side !== null) {
       const left = side.getBoundingClientRect().left
       this.setFxClip(0, w - left)
-      sc.setViewportInsets(0.45, clamp((w - left) / w, 0.1, 0.7))
+      sc.setViewportInsets(0.45, clamp((w - left) / w, 0.1, 0.7), animate)
       return
     }
     if (!landscape) {
       const rect = row.getBoundingClientRect()
       const bottom = rect.height > 0 ? clamp((h - rect.top) / h, 0.1, 0.7) : 0.45
       this.setFxClip(rect.height > 0 ? h - rect.top : 0, 0)
-      sc.setViewportInsets(bottom, 0.4)
+      sc.setViewportInsets(bottom, 0.4, animate)
       return
     }
     this.setFxClip(0, 0)
-    sc.setViewportInsets(0.45, 0.4)
+    sc.setViewportInsets(0.45, 0.4, animate)
   }
 
   // =========================================================================

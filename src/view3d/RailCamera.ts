@@ -18,6 +18,10 @@ export class RailCamera {
   private speedMul = 1
   private skipRate = 0
   private walkT = 0
+  /** 달리기 0..1 — 목표값. 전투로 이어지는 구간에서만 1 로 올린다 */
+  private sprintTo = 0
+  /** 달리기 0..1 — 실제 적용값 (한 프레임에 튀면 그게 컷이다) */
+  private sprint = 0
 
   private readonly _pos = new THREE.Vector3()
   private readonly _look = new THREE.Vector3()
@@ -71,6 +75,8 @@ export class RailCamera {
     this.done = false
     this.speedMul = 1
     this.skipRate = 0
+    this.sprint = 0
+    this.sprintTo = 0
   }
 
   /** 경로 재생성 (다음 구간). start() 전에 호출 */
@@ -81,6 +87,8 @@ export class RailCamera {
     this.done = false
     this.speedMul = 1
     this.skipRate = 0
+    this.sprint = 0
+    this.sprintTo = 0
   }
 
   start(seconds: number): void {
@@ -90,6 +98,22 @@ export class RailCamera {
     this.done = false
     this.speedMul = 1
     this.skipRate = 0
+  }
+
+  /**
+   * 달리기 — 전투로 이어지는 구간에서 보폭을 키운다.
+   *   걷기(상하 0.04m·좌우 0.02m)는 급브레이크의 **대비**를 못 만든다.
+   *   달려오던 몸이 멈춰야 브레이크가 브레이크로 읽히므로, 마지막 구간만
+   *   진폭을 3배 가까이 키우고 주파수를 올린다. level 은 접근성 설정(흔들림)이
+   *   그대로 곱해진 값이다 — 0 이면 평소 걸음 그대로다.
+   */
+  setSprint(level: number): void {
+    this.sprintTo = THREE.MathUtils.clamp(level, 0, 1)
+  }
+
+  /** 이 구간이 끝나는 자리 (적을 미리 세울 지점). 곡선 끝점이라 스킵/배속과 무관하다 */
+  endPoint(out: THREE.Vector3): THREE.Vector3 {
+    return this.curve.getPointAt(1, out)
   }
 
   /** 홀드 시 2배속 */
@@ -107,11 +131,6 @@ export class RailCamera {
     return this.p
   }
 
-  /** 이 구간의 종점 — 걷기가 끝났을 때 설 자리. 적을 미리 세워 둘 기준이다 */
-  endPoint(out: THREE.Vector3): THREE.Vector3 {
-    return this.curve.getPointAt(1, out)
-  }
-
   get finished(): boolean {
     return this.done
   }
@@ -127,7 +146,16 @@ export class RailCamera {
         this.running = false
       }
       this.walkT += d * Math.max(1, this.speedMul) * (this.skipRate > 0 ? 2 : 1)
+        * (1 + this.sprint * 0.40)
     }
+    // 달리기 램프 — 들어갈 때는 0.55초, 나올 때는 0.25초
+    const rampUp = d / 0.55
+    const rampDn = d / 0.25
+    this.sprint = THREE.MathUtils.clamp(
+      this.sprint + THREE.MathUtils.clamp(this.sprintTo - this.sprint, -rampDn, rampUp),
+      0,
+      1,
+    )
 
     const t = THREE.MathUtils.clamp(this.p, 0, 1)
     this.curve.getPointAt(t, this._pos)
@@ -135,17 +163,22 @@ export class RailCamera {
     this.curve.getPointAt(Math.min(1, t + 0.035), this._look)
     if (t >= 1) this._look.set(this._pos.x, this._pos.y, this._pos.z - 2)
 
-    // 보행 사인파 (PRESENTATION §5)
-    const bobY = Math.sin(this.walkT * Math.PI * 2 * 2.1) * 0.04
-    const bobX = Math.sin(this.walkT * Math.PI * 2 * 1.05) * 0.02
+    // 보행 사인파 (PRESENTATION §5). 달릴 때는 진폭이 커진다 — 좌우가 특히 크다:
+    // 뛰는 사람은 위아래로 튀는 것보다 **좌우로 몸이 넘어간다**.
+    // 상하는 절제한다 — 3Hz 에 가까운 큰 상하 진동은 금방 멀미가 된다.
+    // '달린다'는 좌우(요·롤)가 만든다.
+    const amp = 1 + this.sprint * 1.7
+    const ampX = 1 + this.sprint * 2.6
+    const bobY = Math.sin(this.walkT * Math.PI * 2 * 2.1) * 0.04 * amp
+    const bobX = Math.sin(this.walkT * Math.PI * 2 * 1.05) * 0.02 * ampX
     camera.position.set(this._pos.x + bobX, this._pos.y + bobY, this._pos.z)
 
     this._look.y += bobY * 0.35
     camera.up.copy(this._up)
     camera.lookAt(this._look)
     // 머리 흔들림 (yaw/roll)
-    camera.rotateZ(Math.sin(this.walkT * Math.PI * 2 * 1.05 + 0.7) * 0.021)
-    camera.rotateY(Math.sin(this.walkT * Math.PI * 2 * 0.52) * 0.016)
-    camera.rotateX(Math.sin(this.walkT * Math.PI * 2 * 2.1 + 1.3) * 0.008)
+    camera.rotateZ(Math.sin(this.walkT * Math.PI * 2 * 1.05 + 0.7) * 0.021 * ampX)
+    camera.rotateY(Math.sin(this.walkT * Math.PI * 2 * 0.52) * 0.016 * ampX)
+    camera.rotateX(Math.sin(this.walkT * Math.PI * 2 * 2.1 + 1.3) * 0.008 * amp)
   }
 }
