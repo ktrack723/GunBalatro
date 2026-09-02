@@ -4,6 +4,7 @@
 // ============================================================================
 import type { Round, RunState } from '../core/types'
 import { analyzeRounds } from './rounds'
+import { analyzeAttachments } from './attach'
 import { newRun } from '../core/run'
 import { startCombat, basicRound, fire, makeRound, previewDamage } from '../core/combat'
 import { makeEnemy } from '../core/data/enemies'
@@ -326,4 +327,10 @@ main()
 if (process.argv.slice(2).some((a) => a === '--rounds')) {
   // eslint-disable-next-line no-console
   console.log(analyzeRounds())
+}
+
+// --- 부착물 가치 분석 (--attach) --------------------------------------------
+if (process.argv.slice(2).some((a) => a === '--attach')) {
+  // eslint-disable-next-line no-console
+  console.log(analyzeAttachments())
 }

@@ -30,6 +30,7 @@ import {
   runRng,
 } from '../core/run'
 import { fire, settleSpecials, startCombat } from '../core/combat'
+import { computeStartDistance } from '../core/pipeline'
 import { combatBrass } from '../core/economy'
 import { pickDerelict } from '../core/data/events'
 
@@ -317,20 +318,25 @@ export class App {
       const idx = await this.doorChoice(run, doors)
       this.scene?.corridor.hideDoors()
       const door = doors[idx] as DoorOption | undefined
-      await this.travel(run, node, 1, door?.archetype ?? null, DOOR_TRAVEL)
+      // 적을 **이동 전에** 만든다. 그래야 복도 끝에 미리 세워 둘 수 있다 —
+      // 걸어가는 동안 저 끝에 실루엣이 서 있고, 도착하면 그게 그대로 전투 상대다.
       const r = enterDoor(run, idx)
+      this.previewEnemy(run, r.enemy)
+      await this.travel(run, node, 1, door?.archetype ?? null, DOOR_TRAVEL)
       if (r.enemy === null) return true
-      return await this.combatNode(run, r.enemy, r.threat)
+      return await this.combatNode(run, r.enemy, r.threat, true)
     }
 
     if (node === 'boss') {
-      await this.travel(run, node, 0, null)
       const r = enterDoor(run, 0)
+      this.previewEnemy(run, r.enemy)
+      await this.travel(run, node, 0, null)
       if (r.enemy === null) return true
-      return await this.combatNode(run, r.enemy, r.threat)
+      return await this.combatNode(run, r.enemy, r.threat, true)
     }
 
     // --- 상점 / 성소 / 폐허 ---
+    this.scene?.clearPreview()
     await this.travel(run, node, 0, null)
     enterDoor(run, 0) // run.current 를 맞춰 준다 (적은 없다)
     this.idleScene()
@@ -513,10 +519,22 @@ export class App {
   // 전투
   // =========================================================================
 
+  /** 복도 끝에 적을 미리 세운다 (이동 구간 내내 보인다) */
+  private previewEnemy(run: RunState, enemy: EnemyInstance | null): void {
+    const sc = this.scene
+    if (sc === null || enemy === null) return
+    sc.previewEnemy(
+      enemy.archetype.id,
+      (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0,
+      computeStartDistance(run.loadout, enemy),
+    )
+  }
+
   private async combatNode(
     run: RunState,
     enemy: EnemyInstance,
     threat: Threat,
+    previewed = false,
   ): Promise<boolean> {
     const mods = consumeCombatMods(run)
     const s = startCombat(run.loadout, enemy, runRng(run), mods)
@@ -538,8 +556,13 @@ export class App {
       sc.fx.clearScreenEffects()
       sc.fx.setVignette(BASE_VIGNETTE)
       sc.fx.setTint(1, 1, 1)
-      sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0)
-      sc.enemy.setDistance(s.distance, enemy.startDist, false)
+      // 미리 세워 둔 개체를 그대로 쓴다 — 여기서 다시 spawn 하면 체형·색이 바뀌어
+      // 걸어오며 보던 그 실루엣이 딴것으로 갈리고, 그게 곧 '튀어나옴' 이다.
+      if (!previewed) {
+        sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, (run.rngState ^ (run.sector * 131 + run.nodeIndex * 17)) >>> 0)
+      }
+      // 미리보기 거리와 실제 시작 거리가 응급 보급 등으로 어긋나면 스르륵 맞춘다
+      sc.enemy.setDistance(s.distance, enemy.startDist, previewed)
       sc.gun.resetHeat(s.heat)
       // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)
       sc.gun.setMagazineCap(s.cap)
@@ -638,6 +661,7 @@ export class App {
   }
 
   private teardownCombat(): void {
+    this.scene?.clearPreview()
     if (this.view !== null) {
       this.view.destroy()
       this.view = null

@@ -164,10 +164,40 @@ export class GameScene {
       }
       this.enemy.object.position.set(this.anchor.x, 0, this.anchor.z)
     } else {
-      this.enemy.setVisible(false)
+      // 미리보기 중이면 이동 구간에도 적을 **보이는 채로** 둔다.
+      // 예전에는 여기서 무조건 숨겼다가 전투 진입에서 켰다 — 그게 '튀어나옴' 이었다.
+      this.enemy.setVisible(this.previewing)
       this.gun.setLowered(true)
     }
   }
+
+  /**
+   * 이동 구간에 **적을 미리 세운다.** 복도 끝에 실루엣으로 서 있고, 걸어가면서
+   * 가까워진다 — 전투 진입은 '등장' 이 아니라 '거리 좁히기의 끝' 이 된다.
+   * 배경은 그대로다: 적을 복도의 종점(=전투 기준점이 될 자리) 앞에 놓을 뿐이다.
+   */
+  previewEnemy(archetypeId: string, variantSeed: number, distance: number): void {
+    this.enemy.spawn(1, archetypeId, variantSeed)
+    this.previewDist = Math.max(4, distance)
+    this.previewing = true
+    this.enemy.setVisible(true)
+    // 자리는 매 프레임 카메라 기준으로 잡는다 (update). 레일 종점에 한 번 못박아 두면
+    // continueTravel 이 곡선을 새로 깔면서 좌표가 어긋나 **적 옆을 지나쳐 걸어간다** —
+    // 실측에서 전투 시작 시 적이 카메라 뒤 23m 에 있었다.
+  }
+
+  /** 미리 세워 둔 적을 치운다 (전투가 아닌 노드로 갈 때) */
+  clearPreview(): void {
+    this.previewing = false
+    if (this.mode !== 'combat') this.enemy.setVisible(false)
+  }
+
+  get hasPreview(): boolean {
+    return this.previewing
+  }
+
+  private previewing = false
+  private previewDist = 24
 
   /**
    * 전투 진입 — 복도에서 걸음을 **멈추는 순간**이다.
@@ -176,6 +206,7 @@ export class GameScene {
    *   총은 반쯤 내린 이동 자세에서 조금 늦게 올라온다 — 놀란 다음에 꺼내는 순서다.
    */
   enterCombat(): void {
+    this.previewing = false
     this.setMode('combat')
     this.gun.setLowered(true)
     this.gunUpIn = 0.24
@@ -342,6 +373,14 @@ export class GameScene {
     if (this.mode === 'travel') {
       this.rail.update(d, this.camera)
       this.corridor.update(d, this.rail.progress)
+      // 미리 세워 둔 적 — 저 앞에 서 있고, 걸어갈수록 가까워진다.
+      //   배경(복도)은 그대로 두고 적만 다가온다. 도착하면 전투 시작 거리에 딱 맞는다.
+      if (this.previewing) {
+        const t = THREE.MathUtils.clamp(this.rail.progress, 0, 1)
+        const far = this.previewDist * 2.4
+        this.enemy.object.position.set(this.camera.position.x, 0, this.camera.position.z)
+        this.enemy.setDistance(far + (this.previewDist - far) * t, this.previewDist, false)
+      }
     } else {
       // 전투: 제자리 호흡 스웨이 — 기준점(anchor) 주변에서 숨 쉰다.
       const s = this.t

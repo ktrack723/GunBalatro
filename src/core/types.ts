@@ -482,7 +482,7 @@ export const BASE_HEAT_CARRY = 0.26
 export const BASE_CAP = 5
 export const MAX_RAIL_SLOTS = 2
 
-export const HP_BASE = 242
+export const HP_BASE = 290
 export const HP_GROWTH = 1.91
 export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.8, boss: 2.2 } as const

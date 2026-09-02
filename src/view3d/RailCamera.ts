@@ -107,6 +107,11 @@ export class RailCamera {
     return this.p
   }
 
+  /** 이 구간의 종점 — 걷기가 끝났을 때 설 자리. 적을 미리 세워 둘 기준이다 */
+  endPoint(out: THREE.Vector3): THREE.Vector3 {
+    return this.curve.getPointAt(1, out)
+  }
+
   get finished(): boolean {
     return this.done
   }
