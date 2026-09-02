@@ -249,8 +249,10 @@ export class CombatView {
 
   /** 사격 사이 이월 비율을 상시 표시한다 — 이제 온도는 전투 내내 이어지는 자원이다 */
   private renderCarry(s: CombatState): void {
-    const pctVal = Math.round(computeHeatCarry(s.loadout) * 100)
-    this.carryLabel.textContent = '이월 ' + pctVal + '%'
+    // 심연 패시브는 이월 자체를 막는다 — 라벨이 50% 라고 거짓말하면 안 된다
+    const noCarry = s.flags['noCarry'] === true
+    const pctVal = noCarry ? 0 : Math.round(computeHeatCarry(s.loadout) * 100)
+    this.carryLabel.textContent = noCarry ? '이월 0% · 심연' : '이월 ' + pctVal + '%'
     this.carryLabel.style.color = pctVal >= 65 ? 'var(--inc)' : pctVal <= 35 ? '#7fe3ff' : 'var(--text-faint)'
   }
 

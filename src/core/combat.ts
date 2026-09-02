@@ -260,6 +260,7 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
   }
 
   // --- 사격 종료 -----------------------------------------------------------
+  const speedBeforeEnd = s.enemy.speed
   for (const a of s.attachments) {
     mc.self = a.id
     safe(() => a.hooks?.onMagEnd?.(mc), a.id)
@@ -269,8 +270,12 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
     safe(() => s.enemy.passive?.onMagEnd?.(mc), s.enemy.passive.id)
   }
 
+  // 패시브(굶주림)가 속도를 올렸으면 사격 비용을 다시 잡는다
+  if (s.enemy.speed !== speedBeforeEnd) s.fireCost = computeFireCost(s.loadout, s.enemy.speed)
+
   // ★ 온도는 사격 사이에 이월된다 (기본 50%). 부착물이 이 비율을 바꾼다.
-  const carryRatio = computeHeatCarry(s.loadout)
+  //   심연 패시브는 이월 자체를 막는다.
+  const carryRatio = s.flags['noCarry'] === true ? 0 : computeHeatCarry(s.loadout)
   const carried = s.heat * carryRatio
   s.heatStartBase = BASE_HEAT + computeStartHeat(s.loadout) + carried
   out.push({

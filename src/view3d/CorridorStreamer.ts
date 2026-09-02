@@ -509,6 +509,14 @@ export class CorridorStreamer {
       case 'crawler':
         g.push(bx(0.9, 0.02, 0.35, rng.range(-0.6, 0.6), 0.02, rng.range(-H, H), blood, 1))
         break
+      case 'stalker': // 천장 가까이 찍힌 발톱 자국 — 높은 곳에 있었다
+        for (let i = 0; i < 3; i++) {
+          g.push(bx(0.03, 0.34, 0.05, side * (HW - 0.022), rng.range(1.9, 2.5), rng.range(-H, H), blood, 1))
+        }
+        break
+      case 'colossus': // 천장을 긁은 자국
+        g.push(bx(0.5, 0.02, 2.2, rng.range(-0.4, 0.4), 2.98, rng.range(-1, 1), blood, 1))
+        break
       default: // shambler — 벽에 문지른 자국
         g.push(bx(0.03, 0.4, 0.6, side * (HW - 0.022), rng.range(0.8, 1.5), rng.range(-H, H), blood, 1))
     }

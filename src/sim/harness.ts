@@ -83,6 +83,8 @@ export type TraceLine =
 export interface Telemetry {
   trigger: Record<string, number>
   specialShots: Record<string, number>
+  /** 특수탄별 총 데미지 (발당 평균 = specialDmg / specialShots). 'basic' 은 기본탄 */
+  specialDmg: Record<string, number>
   equipped: Record<string, number>
   magsPerCombat: number[]
   heatAtMagEnd: number[]
@@ -101,7 +103,7 @@ export interface Telemetry {
 
 export function emptyTelemetry(): Telemetry {
   return {
-    trigger: {}, specialShots: {}, equipped: {},
+    trigger: {}, specialShots: {}, specialDmg: {}, equipped: {},
     magsPerCombat: [], heatAtMagEnd: [], winDistFrac: [],
     deathHpFrac: [], magsNeeded: [], actionsAvailable: [],
   }
@@ -470,9 +472,9 @@ export function simulateRun(
             hpAfter = ev.enemyHpAfter
             if (tel !== undefined) {
               for (const id of ev.triggered) tel.trigger[id] = (tel.trigger[id] ?? 0) + 1
-              if (ev.round.special !== null) {
-                tel.specialShots[ev.round.special] = (tel.specialShots[ev.round.special] ?? 0) + 1
-              }
+              const spId = ev.round.special ?? 'basic'
+              tel.specialShots[spId] = (tel.specialShots[spId] ?? 0) + 1
+              tel.specialDmg[spId] = (tel.specialDmg[spId] ?? 0) + ev.damage
             }
           } else if (ev.t === 'magEnd') {
             carried = ev.heatCarried

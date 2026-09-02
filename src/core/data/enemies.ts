@@ -70,7 +70,33 @@ const CRAWLER: EnemyArchetype = {
   flavor: '바닥을 기어 이미 코앞이다. 근거리 부착물이 깨어난다.',
 }
 
-export const ARCHETYPES: EnemyArchetype[] = [SHAMBLER, RUNNER, BLOAT, HORDE, CRAWLER]
+/**
+ * 추적자: 빠른데 단단하다. 주자(HP 0.55)는 '세 번이면 끝' 이었지만 이 녀석은
+ * 네 번 안에 1.15배 HP 를 깎아야 한다 — 거리 자원이 가장 빡빡한 적.
+ */
+const STALKER: EnemyArchetype = {
+  id: 'stalker',
+  name: '추적자',
+  hpMul: 1.15,
+  speed: 8,
+  startDist: 38,
+  flavor: '발소리가 없다. 눈을 뗀 사이에 반쯤 와 있다.',
+}
+
+/**
+ * 거상: 비대체(1.8) 위의 체력 벽. 느리지만 2.6배 — 예열할 시간은 주되
+ * 한 탄창으로는 절대 안 끝난다. 장기전 패시브와 붙으면 최악이다.
+ */
+const COLOSSUS: EnemyArchetype = {
+  id: 'colossus',
+  name: '거상',
+  hpMul: 2.6,
+  speed: 3,
+  startDist: 22,
+  flavor: '천장을 긁으며 온다. 복도가 좁아지는 게 아니라 저게 커지는 것이다.',
+}
+
+export const ARCHETYPES: EnemyArchetype[] = [SHAMBLER, RUNNER, BLOAT, HORDE, CRAWLER, STALKER, COLOSSUS]
 
 export const ARCH_BY_ID: Record<EnemyArchetypeId, EnemyArchetype> = {
   shambler: SHAMBLER,
@@ -78,6 +104,8 @@ export const ARCH_BY_ID: Record<EnemyArchetypeId, EnemyArchetype> = {
   bloat: BLOAT,
   horde: HORDE,
   crawler: CRAWLER,
+  stalker: STALKER,
+  colossus: COLOSSUS,
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +246,56 @@ const ENTROPY: EnemyPassive = {
   },
 }
 
+/**
+ * 굶주림: 사격을 마칠 때마다 속도 +2 — 사격 비용이 매번 오른다.
+ * 돌진(고정 −4m)과 달리 **오래 끌수록 가속**하므로 저온·장기전 빌드에 아프다.
+ * fireCost 재계산은 combat.ts 가 magEnd 훅 뒤에 속도 변화를 보고 처리한다.
+ */
+const HUNGER: EnemyPassive = {
+  id: 'hunger',
+  name: '굶주림',
+  text: '사격을 마칠 때마다 적 속도 +2 (사격 비용이 늘어난다)',
+  onMagEnd: (c) => {
+    if (c.s.enemy.hp <= 0) return
+    c.s.enemy.speed += 2
+  },
+}
+
+/**
+ * 심연: 온도가 사격 사이에 이월되지 않는다. 열역학(상한 26)이 '얼마나 뜨거운가' 를
+ * 막는다면 심연은 '뜨거움을 들고 넘어가는 것' 을 막는다 — 매 사격이 첫 사격이다.
+ * 냉각 자켓·이월 빌드에만 아프고, 빙하의 성해 빌드는 오히려 무관하다.
+ */
+const ABYSS: EnemyPassive = {
+  id: 'abyss',
+  name: '심연',
+  text: '이번 전투 동안 온도가 사격 사이에 이월되지 않는다',
+  onCombatStart: (c) => {
+    c.s.flags['noCarry'] = true
+  },
+}
+
+/**
+ * 흡열: 뜨거운 탄을 맞을수록 회복한다. 재생(발수 비례)이 대용량을 벌한다면
+ * 흡열은 **고온 자체**를 벌한다 — 온도 15 이상에서 쏜 발마다 최대 HP 2% 회복.
+ * 발당 회복이라 뜨거운 대용량 탄창은 이중으로 손해다. 한 탄창 최대 12% 로 캡.
+ */
+const SIPHON: EnemyPassive = {
+  id: 'siphon',
+  name: '흡열',
+  text: '온도 15 이상에서 쏜 탄 1발마다 최대 HP 2% 회복 (사격당 최대 12%)',
+  onMagStart: (c) => { c.s.vars['siphonMag'] = 0 },
+  onAfterShot: (c) => {
+    if (c.heatBefore < 15) return
+    const e = c.s.enemy
+    if (e.hp <= 0) return
+    const used = c.s.vars['siphonMag'] ?? 0
+    if (used >= 6) return
+    c.s.vars['siphonMag'] = used + 1
+    e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * 0.02))
+  },
+}
+
 export const PASSIVES: EnemyPassive[] = [
   RIGID,
   PLATED,
@@ -229,6 +307,9 @@ export const PASSIVES: EnemyPassive[] = [
   DEVOUR,
   JAMMING,
   ENTROPY,
+  HUNGER,
+  ABYSS,
+  SIPHON,
 ]
 
 export const PASSIVE_BY_ID: Record<string, EnemyPassive> = (() => {
@@ -239,8 +320,9 @@ export const PASSIVE_BY_ID: Record<string, EnemyPassive> = (() => {
 
 // ---------------------------------------------------------------------------
 // HP 곡선 (BALANCE.md §3)
-//   HP(sector, node) = 400 × 2.15^(sector-1) × nodeMul
-//   엔드리스(섹터 9+)는 8섹터까지 2.15, 그 이후 구간만 2.60 을 곱한다.
+//   HP(sector, node) = HP_BASE × HP_GROWTH^(sector-1) × nodeMul  (상수는 types.ts)
+//   엔드리스(섹터 9+)는 8섹터까지 HP_GROWTH, 그 이후 구간만 HP_ENDLESS_GROWTH 를 곱한다.
+//   난이도 상향(R10): 380 × 1.91^(s-1), big 1.8 / boss 2.2, 위험도 1.05/1.35/3.5.
 // ---------------------------------------------------------------------------
 
 const LAST_SECTOR = 8

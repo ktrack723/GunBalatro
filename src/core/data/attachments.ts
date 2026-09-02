@@ -103,12 +103,13 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'barrel',
     rarity: 'rare',
     // 비율 보정은 옵틱 3중첩과 만나면 되먹임이 된다 — 상한을 박는다.
-    text: '마지막 탄에 이번 탄창 누적 피해의 8% 추가 (최대 +400)',
+    text: '마지막 탄에 이번 탄창 누적 피해의 7% 추가 (최대 +320)',
     hooks: {
       onFire: (c) => {
         if (!c.isLast) return
-        // 상한 180 은 누적 3,600 부터 상시 구속돼 '마지막 탄 +180 고정' 이 됐다
-        const add = Math.min(400, Math.round(c.s.magDamage * 0.08))
+        // 상한 180 은 누적 3,600 부터 상시 구속돼 '마지막 탄 +180 고정' 이 됐다.
+        // 400/8% 는 리프트 +14.7% (레어 상단) — 320/7% 로.
+        const add = Math.min(320, Math.round(c.s.magDamage * 0.07))
         if (add <= 0) return
         c.dmg += add
         proc(c)
@@ -122,10 +123,11 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // 무상한 누적은 런 후반에 ×15 까지 갔다 (실측 특수탄 56발/런).
     // 덧셈 게임에 몰래 들어온 지수 성장이라 상한을 건다.
-    text: '모든 탄 DMG +30. 특수탄을 쏠 때마다 +2 누적 (최대 +40)',
+    // +30/+40 은 리프트 +19%(n=75). 런 후반 상시 +70 평탄은 레어 밴드 밖이다. +25/+30.
+    text: '모든 탄 DMG +25. 특수탄을 쏠 때마다 +2 누적 (최대 +30)',
     hooks: {
       onFire: (c) => {
-        c.dmg += 30 + Math.min(40, getRunVar(c.s, c.self))
+        c.dmg += 25 + Math.min(30, getRunVar(c.s, c.self))
         proc(c)
       },
       onAfterShot: (c) => {
@@ -140,10 +142,12 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'relic',
     // 총열은 순회 최선두라 대입값 위에 광학·개머리판 보너스가 다시 얹힌다
     // (실측 AP 230 → 기본탄 350). 툴팁이 그 사실을 숨기고 있었다.
-    text: '기본탄의 기본 DMG 가 이번 탄창의 특수탄 최고 DMG 로 대체된다 (보너스는 그 위에 다시)',
+    // 탄창 스코프는 채택 0회였다 — 같은 탄창에 특수탄을 넣어야 켜지니 기본탄 전용
+    // 탄창에서 죽었다. **전투 스코프**로 넓힌다: 관통탄 한 발이 그 전투의 기본탄 전부를
+    // 150 짜리로 만든다. 유물답게 '한 발이 전투를 바꾼다'.
+    text: '기본탄의 기본 DMG 가 이번 전투에서 쏜 특수탄 최고 DMG 로 대체된다 (보너스는 그 위에 다시)',
     hooks: {
-      // 툴팁대로 **탄창 스코프**다. vars 는 전투 내내 살아 있으므로 명시적으로 지운다.
-      onMagStart: (c) => { c.s.vars[c.self] = 0 },
+      onCombatStart: (c) => { c.s.vars[c.self] = 0 },
       onFire: (c) => {
         if (!isBasic(c)) return
         const best = getVar(c.s, c.self)
@@ -312,12 +316,14 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // 전투당 1회 발동은 실측 처리량 기여 +1.6% — 희귀 중앙값 +41.5% 의 4% 였다.
     // 상시 조건부로 바꾼다. 조건이 전투 후반에 걸리므로 순서 결정을 깎지 않는다.
-    text: '적 HP 60% 이하면 모든 탄 HEAT +2.0. 전투를 이길 때마다 +0.15 누적(런)',
+    // '적 HP 60% 이하' 는 봇 오라클(HP 1e12 프로브)에 영원히 안 보여 채택 0회였다.
+    // 같은 뜻('전투 후반에 켜진다')을 **사격 횟수**로 표현하면 오라클도 사람도 읽는다.
+    // +2.4 는 리프트 +16.1%(n=177) — 장기전이 흔해진 페이싱에서 상시 곱셈이었다. +1.8.
+    text: '전투의 두 번째 사격부터 모든 탄 HEAT +1.5. 전투를 이길 때마다 +0.15 누적(런)',
     hooks: {
       onFire: (c) => {
-        const e = c.s.enemy
-        if (e.hp <= 0 || e.hp > e.maxHp * 0.6) return
-        c.heatGain += 2.0 + getRunVar(c.s, c.self)
+        if (c.s.magsFired < 1) return
+        c.heatGain += 1.5 + getRunVar(c.s, c.self)
         proc(c)
       },
       onCombatEnd: (c) => { if (c.s.enemy.hp <= 0) addRunVar(c.s, c.self, 0.15) },
@@ -328,9 +334,11 @@ export const ATTACHMENTS: Attachment[] = [
     name: '병참 렌즈',
     slot: 'optic',
     rarity: 'rare',
-    text: '탄창의 첫 특수탄은 소모되지 않는다',
+    // 매 탄창 무료 1발은 특수탄이 희소해진 뒤 리프트 +19.8%(n=83) — 사실상 특수탄
+    // 공급 2배였다. 전투의 첫 사격에서만.
+    text: '전투의 첫 사격에서 첫 특수탄은 소모되지 않는다',
     hooks: {
-      onMagStart: (c) => { c.s.flags['freeFirstSpecial'] = true },
+      onMagStart: (c) => { c.s.flags['freeFirstSpecial'] = c.s.magsFired === 0 },
     },
   },
   {
@@ -367,20 +375,23 @@ export const ATTACHMENTS: Attachment[] = [
     name: '고정 개머리판',
     slot: 'stock',
     rarity: 'common',
-    // +6 이면 간이 거리계가 10칸 중 10칸에서 우월해 동부위·동등급 지배가 생긴다.
-    text: '전투 시작 거리 +8m',
-    mods: { startDist: 8 },
+    // 페이싱이 조여진 뒤(여유 배수 0.9) 시작 거리 +8m 은 행동 수 +2 — 커먼인데
+    // 리프트 +19%, +6m 에서도 +21%(n=34, R5~R10 내내 상위). +5m 으로.
+    // (간이 거리계는 −1m/사격이라 4사격 이상 장기전에서 이걸 앞선다)
+    text: '전투 시작 거리 +5m',
+    mods: { startDist: 5 },
   },
   {
     id: 'st_charm',
     name: '황동 부적',
     slot: 'stock',
     rarity: 'common',
-    text: '발사할 때마다 탄피 +6',
+    // +6 은 커먼인데 리프트 +9.1%(n=110). 특수탄 값이 오른 만큼 탄피 값도 올랐다. +4.
+    text: '발사할 때마다 탄피 +3',
     hooks: {
       onAfterShot: (c) => {
         if (c.s.dryRun) return
-        c.s.loadout.brass += 6
+        c.s.loadout.brass += 3
         proc(c)
       },
     },
@@ -411,16 +422,21 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // 칸만 주면 처리량 기여가 정확히 0 이라 실측 채택률도 0 이었다.
     // 희귀값을 하려면 켜자마자 효과가 있어야 한다 — 행동 수 축 보너스를 얹는다.
-    text: '보조 광학 칸 +1 · 사격 거리 소모 −2m',
-    mods: { railSlots: 1, fireCost: -2 },
+    // 페이싱을 조이자(여유 배수 0.8) 사격 비용 −2 는 행동 수를 최대 2.5배로 불려
+    // 승률 리프트 +27.6% 로 유물보다 셌다. −1 로 내리니 간이 거리계(커먼, −1m)와
+    // 동일해져 채택 0 — 축을 시작 거리로 바꿔 정체성을 준다.
+    text: '보조 광학 칸 +1 · 전투 시작 거리 +6m',
+    mods: { railSlots: 1, startDist: 6 },
   },
   {
     id: 'st_stride',
     name: '거인의 보폭',
     slot: 'stock',
     rarity: 'rare',
-    text: '적 접근 속도 −3',
-    mods: { enemySpeed: -3 },
+    // 속도 −3 은 배회자(5) 를 2 로 만들어 행동 수 2.5배 — 리프트 +33.7%. −2 로 내려도
+    // +26.8%. 속도 축은 곱셈이라 대가 없이는 못 준다 — 시작 거리 −8m 을 붙인다.
+    text: '적 접근 속도 −2 · 전투 시작 거리 −8m',
+    mods: { enemySpeed: -2, startDist: -8 },
   },
   {
     id: 'st_bandolier',
@@ -432,10 +448,18 @@ export const ATTACHMENTS: Attachment[] = [
     // 전투 시작 2발 + 사격마다 1발. 전투 시작분이 없으면 첫 탄창에 값이 0 이라
     // 유물을 집었는데 그 전투에서 아무 일도 안 일어난다.
     // 전투 2발이면 황제+계약+성사 3광학 조합이 단일 탄창 11.5배(R3 12배)에 닿는다.
-    text: '전투 시작 시 무작위 특수탄 1발 · 사격을 시작할 때마다 1발을 보급받는다',
+    // 특수탄을 희소하게 만들자(2/2/1) 무제한 보급은 승률 리프트 +39% 였다.
+    // 유물은 세도 되지만 '특수탄 경제를 통째로 무효화' 는 안 된다 — 전투당 상한 3발.
+    // 상한 3 이어도 리프트 +55%(n=40) — 런당 60발 넘게 공급했다. 사격 보급은 2발까지.
+    text: '전투 시작 시 무작위 특수탄 1발 · 사격을 시작할 때마다 1발 보급 (전투당 최대 2발)',
     hooks: {
-      onCombatStart: (c) => { supply(c.s, 1) },
-      onMagStart: (c) => { supply(c.s, 1) },
+      onCombatStart: (c) => { c.s.vars[c.self] = 0; supply(c.s, 1) },
+      onMagStart: (c) => {
+        const n = getVar(c.s, c.self)
+        if (n >= 2) return
+        c.s.vars[c.self] = n + 1
+        supply(c.s, 1)
+      },
     },
   },
 
@@ -552,11 +576,12 @@ export const ATTACHMENTS: Attachment[] = [
     // cap 은 fire() 가 validatePlan 에서 먼저 읽으므로 반드시 **사격이 끝난 뒤** 올린다.
     // 성장분을 vars 로 따로 들고 있어야 전투 중 부착물 교체(swapAttachment 가
     // computeCap 으로 cap 을 다시 잡는다)에도 다음 magEnd 에서 복원된다.
-    text: '용량 5. 사격을 마칠 때마다 이번 전투 동안 용량 +1 (최대 10)',
+    // 최대 10 은 4탄창+ 전투(실측 30%)에서 드럼 8연발을 넘어섰다 — 리프트 +18%. 최대 8.
+    text: '용량 5. 사격을 마칠 때마다 이번 전투 동안 용량 +1 (최대 8)',
     mag: { cap: 5 },
     hooks: {
       onMagEnd: (c) => {
-        const g = Math.min(5, getVar(c.s, c.self) + 1)
+        const g = Math.min(3, getVar(c.s, c.self) + 1)
         c.s.vars[c.self] = g
         c.s.cap = computeCap(c.s.loadout) + g
       },
@@ -573,14 +598,15 @@ export const ATTACHMENTS: Attachment[] = [
     // 논리적으로 배타라, 광학 3칸에서 처음으로 '이 둘은 같이 못 쓴다' 는 쌍이 생긴다.
     // '특수탄이 있을 때만' 을 반드시 건다 — 안 걸면 기본탄만인 탄창(실측 40.7%)에서
     // 조건이 공짜로 성립해 그냥 무조건 +DMG 가 된다.
-    text: '특수탄을 넣고도 기본탄으로 끝내면 모든 탄 DMG +55',
+    // +55 는 리프트 +10.5%(n=82) — 조건이 '특수탄 1발 + 기본탄 마무리' 라 거의 공짜였다. +40.
+    text: '특수탄을 넣고도 기본탄으로 끝내면 모든 탄 DMG +40',
     hooks: {
       onFire: (c) => {
         const p = c.s.magPlan
         const last = p[p.length - 1]
         if (last === undefined || last.special !== null) return
         if (!p.some((r) => r.special !== null)) return
-        c.dmg += 55
+        c.dmg += 40
         proc(c)
       },
     },
@@ -627,11 +653,12 @@ export const ATTACHMENTS: Attachment[] = [
     // 중(重)총열 하나뿐이었다. 진짜 값어치는 열화상·삼위일체·황제의 눈·죽음의 성사와
     // **동시에 켜질 수 없다**는 것 — 광학 세 칸을 채울 때 처음으로 '어느 축을 버릴까'
     // 라는 배제 결정이 생긴다.
-    text: '탄창에 특수탄이 하나도 없으면 모든 탄 HEAT +1.2',
+    // 특수탄이 희소해지자 '기본탄만' 조건이 거의 상시 성립 — 리프트 +7.4%(n=204). +1.0.
+    text: '탄창에 특수탄이 하나도 없으면 모든 탄 HEAT +1.0',
     hooks: {
       onFire: (c) => {
         if (specialsInMag(c) > 0) return
-        c.heatGain += 1.2
+        c.heatGain += 1.0
         proc(c)
       },
     },
@@ -707,8 +734,9 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'optic',
     rarity: 'uncommon',
     // 임계 15(성립률 25.7%)에 +130 은 언커먼 밴드의 2배였다. 12(32.8%)/+70 으로.
-    text: '발사 전 온도 12 초과면 DMG +55',
-    hooks: { onFire: (c) => { if (c.heatBefore > 12) { c.dmg += 55; proc(c) } } },
+    // +55 는 채택 32%/리프트 +7.2%(n=326) — 언커먼 중 유일하게 유의미한 양의 리프트. +45.
+    text: '발사 전 온도 12 초과면 DMG +45',
+    hooks: { onFire: (c) => { if (c.heatBefore > 12) { c.dmg += 45; proc(c) } } },
   },
   {
     // 순수 평탄 DMG 이므로 축으로 보면 총열이다.

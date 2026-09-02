@@ -185,7 +185,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_cryo',
     name: '냉동탄',
-    text: '발사 전 온도가 낮을수록 강하다 (DMG +(18−온도)×30)',
+    text: '발사 전 온도가 낮을수록 강하다 (DMG +(18−온도)×26)',
     rarity: 'uncommon',
     dmg: 18,
     heat: 0.15,
@@ -195,7 +195,7 @@ export const SPECIALS: SpecialDef[] = [
       onFire(c) {
         const gap = 18 - c.heatBefore
         if (gap <= 0) return
-        c.dmg += Math.round(amp(c, gap * 30))
+        c.dmg += Math.round(amp(c, gap * 26))
         proc(c)
       },
     },
@@ -230,8 +230,9 @@ export const SPECIALS: SpecialDef[] = [
     color: '#a9c4d6',
     hooks: {
       onFire(c) {
+        // 34/온도 는 발당 평균이 기본탄의 6.0배로 유물탄(특이점 4.9배)보다 셌다. 26 으로.
         const drop = c.s.heat / 2
-        c.dmg += Math.round(amp(c, drop * 34))
+        c.dmg += Math.round(amp(c, drop * 20))
         c.s.heat -= drop
         proc(c)
       },

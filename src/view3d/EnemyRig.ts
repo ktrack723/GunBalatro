@@ -108,6 +108,12 @@ function archParams(id: string): ArchParams {
     // 기어다니는 것: 바닥에 붙어 넓게 퍼진다
     case 'crawler':
       return { scale: 1.18, ride: 0.28, legs: 8, legLen: 1.45, wide: 1.40, freq: 1.9, tremor: 1.0, spread: 0.5, heads: 3 }
+    // 추적자: 길고 높은 다리 6개, 빠른 보행, 심하게 떤다 — 도약 직전이 계속된다
+    case 'stalker':
+      return { scale: 1.12, ride: 1.02, legs: 6, legLen: 1.62, wide: 0.82, freq: 3.9, tremor: 2.0, spread: 0.5, heads: 2 }
+    // 거상: 천장에 닿을 만큼 크다. 느리고 무겁게, 다리 8개가 복도를 꽉 채운다
+    case 'colossus':
+      return { scale: 2.05, ride: 1.10, legs: 8, legLen: 1.30, wide: 1.30, freq: 0.6, tremor: 0.5, spread: 0.4, heads: 5 }
     // 배회자: 기준선
     default:
       return { scale: 1.20, ride: 0.86, legs: 8, legLen: 1.10, wide: 1.05, freq: 1.3, tremor: 1.0, spread: 0.55, heads: 3 }

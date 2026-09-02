@@ -166,6 +166,11 @@ const THREAT_PAIRS: ReadonlyArray<readonly [Threat, Threat]> = [
   [2, 3],
 ]
 const ARCHES: EnemyArchetypeId[] = ['shambler', 'runner', 'bloat', 'horde', 'crawler']
+/** 섹터 3부터 추적자·거상이 섞인다 — 초반 두 섹터는 기준선 다섯 종으로 배운다 */
+const ARCHES_LATE: EnemyArchetypeId[] = [...ARCHES, 'stalker', 'colossus']
+function archPool(run: RunState): EnemyArchetypeId[] {
+  return run.sector >= 3 ? ARCHES_LATE : ARCHES
+}
 
 /** 광학을 하나라도 달고 있는가 (교란 패시브 게이팅) */
 function hasOptic(run: RunState): boolean {
@@ -183,16 +188,17 @@ export function rollDoors(run: RunState): DoorOption[] {
   const isBoss = currentNode(run) === 'boss'
   const doors = withRng(run, (r) => {
     const pair = r.pick(THREAT_PAIRS)
+    const pool = archPool(run)
     return pair.map((threat): DoorOption => {
-      const arch = r.pick(ARCHES)
+      const arch = r.pick(pool)
       const wantPassive = threat === 3 || (threat === 2 && r.next() < 0.3)
       // 교란은 광학이 하나도 없으면 아무 일도 일어나지 않는다 — 전투 시점 광학 0개
       // 비율이 S1 87% / S2 56% 라, 초반 위험도3 문이 공짜가 되어 버린다.
-      const pool = hasOptic(run) ? PASSIVES : PASSIVES.filter((p) => p.id !== 'jamming')
+      const ppool = hasOptic(run) ? PASSIVES : PASSIVES.filter((p) => p.id !== 'jamming')
       const passive = isBoss
         ? run.bossPassiveId
         : wantPassive
-          ? r.pick(pool).id
+          ? r.pick(ppool).id
           : null
       return {
         threat,
@@ -246,6 +252,12 @@ function equippedIds(run: RunState): Set<string> {
   return out
 }
 
+/**
+ * 보상 한 장의 특수탄 발수 3/2/1.
+ * 2/2/1 로 줄여 봤더니(난이도 상향 R1~R6) 특수탄이 없는 탄창이 대부분이 되어
+ * **배열 자체가 사라졌다** — 초보/숙련 생존율 격차가 27% → 5% 로 무너졌다.
+ * 특수탄은 이 게임의 '순서' 축이다. 희소성은 공급이 아니라 **소비**(센 적)로 만든다.
+ */
 function specialCountFor(rarity: Rarity): number {
   if (rarity === 'common') return 3
   if (rarity === 'uncommon') return 2

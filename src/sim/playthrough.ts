@@ -134,9 +134,14 @@ export function renderTelemetry(tel: Telemetry, runs: number): string {
   L.push('')
   L.push('▣ 특수탄 실사용')
   line()
-  const spRows = SPECIALS.map((s) => [s.name, s.rarity, tel.specialShots[s.id] ?? 0] as const)
+  const avgDmg = (id: string): number => {
+    const n = tel.specialShots[id] ?? 0
+    return n === 0 ? 0 : Math.round((tel.specialDmg[id] ?? 0) / n)
+  }
+  L.push(`   ${pad('기본탄', 14)} ${pad('-', 10)} ${padS(String(tel.specialShots['basic'] ?? 0), 6)}발  발당 평균 ${padS(String(avgDmg('basic')), 7)}`)
+  const spRows = SPECIALS.map((s) => [s.name, s.rarity, tel.specialShots[s.id] ?? 0, avgDmg(s.id)] as const)
   for (const r of spRows.slice().sort((a, b) => b[2] - a[2])) {
-    L.push(`   ${pad(r[0], 14)} ${pad(r[1], 10)} ${padS(String(r[2]), 6)}발`)
+    L.push(`   ${pad(r[0], 14)} ${pad(r[1], 10)} ${padS(String(r[2]), 6)}발  발당 평균 ${padS(String(r[3]), 7)}  (기본탄 대비 ${(r[3] / Math.max(1, avgDmg('basic'))).toFixed(2)}x)`)
   }
   const unusedSp = spRows.filter((r) => r[2] === 0)
   if (unusedSp.length > 0) L.push(`   ❌ 한 발도 안 쏜 특수탄: ${unusedSp.map((r) => r[0]).join(', ')}`)

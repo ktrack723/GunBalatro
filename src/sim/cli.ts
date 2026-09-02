@@ -170,10 +170,32 @@ function main(): void {
       for (const id of r.finalBuild) adopt[id] = (adopt[id] ?? 0) + 1
     }
   }
+  // 승률 리프트: 이 부착물이 최종 빌드에 있던 런의 승률 − 같은 스킬 팩의 전체 승률.
+  // 채택률이 높은데 리프트도 크면 '밸류가 미친' 후보다. (n<8 은 표본 부족으로 뺀다)
+  const liftNum: Record<string, number> = {}
+  const liftDen: Record<string, number> = {}
+  for (const p of packs) {
+    const base = p.summary.winRate
+    for (const r of p.results) {
+      for (const id of r.finalBuild) {
+        liftNum[id] = (liftNum[id] ?? 0) + ((r.won ? 1 : 0) - base)
+        liftDen[id] = (liftDen[id] ?? 0) + 1
+      }
+    }
+  }
+  const liftOf = (id: string): number => ((liftDen[id] ?? 0) > 0 ? (liftNum[id] ?? 0) / (liftDen[id] ?? 1) : 0)
   const al = Object.entries(adopt).sort((a, b) => b[1] - a[1])
+  out('   ' + pad('이름', 18) + pad('부위', 11) + pad('등급', 10) + padS('채택', 8) + padS('승률리프트', 12))
   for (const [id, n] of al.slice(0, 12)) {
     const a = ATT_BY_ID[id]
-    out('   ' + pad(a?.name ?? id, 18) + pad(a?.slot ?? '', 11) + pad(a?.rarity ?? '', 10) + padS(pct(n / builds), 8))
+    const lf = liftOf(id)
+    out('   ' + pad(a?.name ?? id, 18) + pad(a?.slot ?? '', 11) + pad(a?.rarity ?? '', 10) + padS(pct(n / builds), 8) + padS((lf >= 0 ? '+' : '') + pct(lf), 12))
+  }
+  out('   [승률 리프트 상위 — 밸류 과다 후보 (n≥8)]')
+  const lifts = Object.keys(adopt).filter((id) => (liftDen[id] ?? 0) >= 8).sort((x, y) => liftOf(y) - liftOf(x))
+  for (const id of lifts.slice(0, 8)) {
+    const a = ATT_BY_ID[id]
+    out('   ' + pad(a?.name ?? id, 18) + pad(a?.slot ?? '', 11) + pad(a?.rarity ?? '', 10) + padS('n=' + (liftDen[id] ?? 0), 8) + padS('+' + pct(liftOf(id)), 12))
   }
   const never = Object.keys(ATT_BY_ID).filter((id) => (adopt[id] ?? 0) === 0)
   out('   채택 0회: ' + never.length + '종' + (never.length > 0 ? ' — ' + never.map((i) => ATT_BY_ID[i].name).join(', ') : ''))
@@ -252,8 +274,8 @@ function main(): void {
       (gap.length === 8 ? '  (S8 격차 ' + pct(gap[7]) + ')' : ''),
   )
   out(
-    verdict(g.summary.winRate >= 0.28 && g.summary.winRate <= 0.42) +
-      ' 5. 승률 밴드 — 목표 28~42% · 실측 ' + pct(g.summary.winRate),
+    verdict(g.summary.winRate >= 0.14 && g.summary.winRate <= 0.26) +
+      ' 5. 승률 밴드 — 목표 14~26% (난이도 상향 후) · 실측 ' + pct(g.summary.winRate),
   )
   out('═'.repeat(70))
   process.exitCode = 0

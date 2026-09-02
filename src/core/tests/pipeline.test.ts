@@ -293,3 +293,58 @@ describe('HP 곡선', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// 난이도 상향 — 신규 아키타입·패시브
+// ---------------------------------------------------------------------------
+describe('신규 적', () => {
+  it('추적자·거상이 카탈로그와 ID 맵에 있고 HP 배수가 의도대로다', () => {
+    const ids = ARCHETYPES.map((a) => a.id)
+    expect(ids).toContain('stalker')
+    expect(ids).toContain('colossus')
+    const st = makeEnemy({ archetypeId: 'stalker', passiveId: null, sector: 1, nodeMul: 1, threat: 1 })
+    const co = makeEnemy({ archetypeId: 'colossus', passiveId: null, sector: 1, nodeMul: 1, threat: 1 })
+    const base = makeEnemy({ archetypeId: 'shambler', passiveId: null, sector: 1, nodeMul: 1, threat: 1 })
+    expect(st.maxHp / base.maxHp).toBeCloseTo(1.15, 1)
+    expect(co.maxHp / base.maxHp).toBeCloseTo(2.6, 1)
+    expect(st.speed).toBeGreaterThan(base.speed)
+  })
+
+  it('굶주림: 사격을 마칠 때마다 속도가 오르고 사격 비용이 다시 계산된다', () => {
+    const e = { ...dummy(), passive: PASSIVES.find((p) => p.id === 'hunger') ?? null }
+    const s = startCombat(loadout(), e, makeRng(1))
+    const cost0 = s.fireCost
+    const speed0 = s.enemy.speed
+    fire(s, [basicRound(), basicRound()])
+    expect(s.enemy.speed).toBe(speed0 + 2)
+    expect(s.fireCost).toBeGreaterThan(cost0)
+  })
+
+  it('심연: 사격 사이에 온도가 이월되지 않는다', () => {
+    const e = { ...dummy(), passive: PASSIVES.find((p) => p.id === 'abyss') ?? null }
+    const s = startCombat(loadout(), e, makeRng(1))
+    const events = fire(s, [basicRound(), basicRound(), basicRound()])
+    const end = events.find((x) => x.t === 'magEnd')
+    expect(end !== undefined && end.t === 'magEnd' ? end.heatCarried : -1).toBe(0)
+    // 기본 이월(50%)이면 0 이 아니어야 한다 — 대조군
+    const s2 = startCombat(loadout(), dummy(), makeRng(1))
+    const ev2 = fire(s2, [basicRound(), basicRound(), basicRound()])
+    const end2 = ev2.find((x) => x.t === 'magEnd')
+    expect(end2 !== undefined && end2.t === 'magEnd' ? end2.heatCarried : 0).toBeGreaterThan(0)
+  })
+
+  it('흡열: 온도 15 이상에서 쏜 발마다 2% 회복하되 사격당 12% 를 넘지 않는다', () => {
+    const e = { ...dummy(10000), passive: PASSIVES.find((p) => p.id === 'siphon') ?? null }
+    const s = startCombat(loadout(['mg_drum']), e, makeRng(1))
+    s.heatStartBase = 30 // 뜨거운 상태로 시작 — 모든 발이 조건 성립
+    const plan: Round[] = []
+    for (let i = 0; i < s.cap; i += 1) plan.push(basicRound())
+    const hpBefore = s.enemy.hp
+    const events = fire(s, plan)
+    let dealt = 0
+    for (const ev of events) if (ev.t === 'shot') dealt += ev.damage
+    const healed = s.enemy.hp - (hpBefore - dealt)
+    expect(healed).toBeGreaterThan(0)
+    expect(healed).toBeLessThanOrEqual(Math.round(10000 * 0.02) * 6)
+  })
+})
