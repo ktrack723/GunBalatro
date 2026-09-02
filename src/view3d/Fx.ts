@@ -561,6 +561,10 @@ export class Fx {
    * 시퀀서는 같은 시간만큼 기다렸다가 착탄 연출을 낸다 — 눈에 보이는 비행과
    * 실제 타격 타이밍이 어긋나면 "선 긋고 나서 숫자가 뜬다" 로 되돌아간다.
    */
+  /**
+   * @deprecated 궤적 연출은 쓰지 않는다 — 탄이 날아가는 선을 지우고 총구 화염과
+   * 착탄 파티클만 남겼다(§발사 연출). 풀과 갱신 코드는 남겨 두되 호출부는 없다.
+   */
   bullet(from: THREE.Vector3, to: THREE.Vector3, color: number, seconds: number): void {
     let slot = this.bullets.find((b) => !b.active)
     if (!slot) slot = this.bullets[0]
@@ -583,23 +587,9 @@ export class Fx {
   impactFrame(pos: THREE.Vector3, color: number, power = 1): void {
     const p = THREE.MathUtils.clamp(power, 0.3, 2.2)
 
-    // 방사 스프라이트
-    let slot = this.bursts.find((b) => !b.active)
-    if (!slot) slot = this.bursts[0]
-    if (slot) {
-      slot.active = true
-      slot.t = 0
-      slot.dur = 0.21
-      // 임팩트 프레임은 **구두점**이지 커튼이 아니다. 크게 잡으면 적을 덮어
-      // 무엇이 맞았는지가 사라진다 (실측: 1.4m 스프라이트가 1.8m 크리처를 가렸다).
-      slot.base = (0.26 + 0.30 * p) * (0.5 + 0.5 * this.flashI)
-      slot.mat.color.setHex(color)
-      slot.mat.opacity = 1
-      slot.mesh.position.copy(pos)
-      slot.mesh.rotation.z = this.rng.range(0, Math.PI * 2)
-      slot.mesh.visible = true
-      slot.mesh.scale.setScalar(slot.base * 0.35)
-    }
+    // 방사 스프라이트는 **쓰지 않는다.** 착탄에서 보여야 하는 건 '탄이 박혔다' 는
+    // 파편뿐이다 — 원판이 겹치면 그게 먼저 읽혀서 적이 가려진다.
+    // (bursts 풀은 처치 연출이 계속 쓴다.)
 
     // 점광 — 적에서 카메라 쪽으로 1.3m 밀어낸다.
     //   맞은 지점 위에 두면 광량이 발산해 적이 흰 덩어리가 되고, 무엇이 맞았는지가
@@ -610,22 +600,28 @@ export class Fx {
     else this._v0.set(0, 0, 1)
     this.hitLight.position.copy(pos).addScaledVector(this._v0, 1.3)
     this.hitLight.color.setHex(color)
-    this.hitLight.intensity = 26 * p * (0.3 + 0.7 * this.flashI)
+    this.hitLight.intensity = 20 * p * (0.3 + 0.7 * this.flashI)
     this.hitT = 0
 
     // 스파크 — 정면(카메라 쪽)으로 튀는 성분을 섞어 화면을 향해 터지게 한다
     const c = new THREE.Color(color)
     const white = new THREE.Color(0xfff2d8)
-    const n = Math.round(18 * p)
+    // 알갱이는 늘리되 **퍼지지 않게** 한다. 속도 2.2~7.5 는 복도 전체로 흩어져
+    // '적에게 박혔다' 가 아니라 '화면에 눈이 내린다' 로 읽혔다(실측 스크린샷).
+    // 빠르고 짧게 — 착탄점 주위에 뭉쳐 터졌다 사라진다.
+    const n = Math.round(28 * p)
     for (let i = 0; i < n; i++) {
       this.emit(
         pos,
-        this.rng.range(2.2, 7.5) * p,
+        this.rng.range(0.9, 2.8) * p,
         i % 3 === 0 ? white : c,
-        this.rng.range(0.05, 0.115),
-        this.rng.range(0.20, 0.46),
-        -6.5,
-        2.6,
+        // 알갱이 크기는 **거리로 나뉜다** (gl_PointSize = size × 260/거리).
+        //   0.085 는 26m 에서 0.85px — 화면에 아무것도 안 남는다. 방사 스프라이트를
+        //   지운 지금은 이 알갱이가 착탄의 유일한 신호라 크게 잡아야 한다.
+        this.rng.range(0.24, 0.52),
+        this.rng.range(0.14, 0.30),
+        -9.5,
+        7.5,
       )
     }
   }

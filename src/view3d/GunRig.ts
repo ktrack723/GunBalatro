@@ -243,35 +243,37 @@ export class GunRig {
     })
 
     // --- 강철부 (수신부·개머리·손잡이·광학) ---
+    //   볼터 실루엣: **짧고 두껍다.** 총열이 길면 화면 절반이 관이 되고 실루엣이
+    //   소총으로 읽힌다. 수신부를 키우고 총열을 0.47 → 0.34 로 줄여 앞이 뭉툭해진다.
     const steel: THREE.BufferGeometry[] = [
-      box(0.088, 0.105, 0.36, 0, -0.062, -0.19),
-      box(0.052, 0.020, 0.30, 0, -0.002, -0.20),
-      box(0.076, 0.118, 0.20, 0, -0.092, 0.10),
-      box(0.056, 0.036, 0.15, 0, -0.024, 0.065),
-      box(0.048, 0.140, 0.064, 0, -0.162, -0.028, 0.30),
-      box(0.030, 0.014, 0.078, 0, -0.130, -0.098),
-      box(0.054, 0.052, 0.115, 0, 0.030, -0.118),
-      box(0.060, 0.013, 0.032, 0, 0.052, -0.172),
-      box(0.013, 0.046, 0.013, 0, 0.022, -0.600),
-      box(0.030, 0.030, 0.055, 0, -0.070, 0.010),
+      box(0.118, 0.128, 0.36, 0, -0.060, -0.19),   // 수신부 — 두껍게
+      box(0.072, 0.026, 0.30, 0, 0.004, -0.20),    // 상부 레일
+      box(0.104, 0.132, 0.20, 0, -0.092, 0.10),    // 개머리
+      box(0.070, 0.044, 0.15, 0, -0.024, 0.065),
+      box(0.056, 0.140, 0.070, 0, -0.162, -0.028, 0.30), // 손잡이
+      box(0.036, 0.016, 0.078, 0, -0.130, -0.098),
+      box(0.066, 0.058, 0.115, 0, 0.036, -0.118),  // 광학 블록
+      box(0.074, 0.015, 0.032, 0, 0.060, -0.172),
+      box(0.015, 0.050, 0.015, 0, 0.028, -0.500),  // 가늠쇠 (총열 단축에 맞춰 앞으로)
+      box(0.038, 0.038, 0.055, 0, -0.070, 0.010),
     ]
     // --- 총열부 (온도 램프 대상) ---
     const hot: THREE.BufferGeometry[] = [
-      cyl(0.021, 0.021, 0.47, 10, 0, -0.028, -0.535, HALF_PI),
-      box(0.074, 0.074, 0.24, 0, -0.028, -0.400),
-      cyl(0.036, 0.031, 0.078, 10, 0, -0.028, -0.788, HALF_PI),
-      box(0.058, 0.010, 0.030, 0, 0.006, -0.795),
-      box(0.010, 0.058, 0.030, 0, -0.028, -0.795),
+      cyl(0.031, 0.031, 0.34, 10, 0, -0.028, -0.460, HALF_PI),  // 총열 (짧고 굵게)
+      box(0.098, 0.098, 0.24, 0, -0.028, -0.380),                // 총열 덮개
+      cyl(0.050, 0.044, 0.082, 10, 0, -0.028, -0.648, HALF_PI),  // 소염기
+      box(0.072, 0.012, 0.032, 0, 0.008, -0.655),
+      box(0.012, 0.072, 0.032, 0, -0.028, -0.655),
     ]
     for (let i = 0; i < 5; i++) {
-      hot.push(box(0.078, 0.010, 0.016, 0, 0.010, -0.32 - i * 0.036))
+      hot.push(box(0.102, 0.012, 0.018, 0, 0.012, -0.300 - i * 0.030))
     }
     // --- 황동 장식 (제국식 각인) ---
     const brass: THREE.BufferGeometry[] = [
-      box(0.092, 0.014, 0.020, 0, -0.020, -0.040),
-      box(0.020, 0.052, 0.010, 0, -0.062, -0.372),
-      box(0.058, 0.010, 0.010, 0, -0.030, 0.170),
-      box(0.012, 0.012, 0.012, 0, -0.010, -0.300, 0, 0, Math.PI / 4),
+      box(0.122, 0.016, 0.020, 0, -0.020, -0.040),
+      box(0.024, 0.056, 0.012, 0, -0.062, -0.352),
+      box(0.076, 0.012, 0.010, 0, -0.030, 0.170),
+      box(0.016, 0.016, 0.016, 0, -0.010, -0.290, 0, 0, Math.PI / 4),
     ]
 
     this.addMerged(steel, this.steelMat)
@@ -303,11 +305,11 @@ export class GunRig {
 
     // 백열 이상에서 켜지는 볼륨 글로우 (광원 아님 — additive 평면)
     this.glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.30), this.glowMat)
-    this.glowMesh.position.set(0, -0.028, -0.50)
+    this.glowMesh.position.set(0, -0.028, -0.44)
     this.glowMesh.renderOrder = 12
     this.parts.add(this.glowMesh)
 
-    this.muzzleObj.position.set(0, -0.028, -0.840)
+    this.muzzleObj.position.set(0, -0.028, -0.700)
     this.parts.add(this.muzzleObj)
 
     this.recoilNode.add(this.parts)
@@ -369,11 +371,27 @@ export class GunRig {
   }
 
   /** 반동. strength 는 대략 0.6(약) ~ 1.6(강) */
+  /**
+   * 발사 반동. 탄이 날아가는 선을 지운 뒤로 "쐈다" 를 알리는 건 이 튐 하나뿐이다 —
+   * 그래서 크게 준다. 총구가 위로 크게 들리고 몸이 뒤로 밀린다.
+   */
   kick(strength: number): void {
     const s = THREE.MathUtils.clamp(strength, 0, 2.5)
-    this.kickVX += 6.2 * s
-    this.kickVZ += 2.4 * s
+    this.kickVX += 13.5 * s
+    this.kickVZ += 4.2 * s
   }
+
+  /**
+   * 재장전 검사 자세 (0=사격 자세, 1=완전히 눕힘).
+   *   예전에는 총을 **적 쪽으로 겨눈 채** 장전손잡이를 당겼다 — 총열이 카메라 정면을
+   *   향하고 있어서 손잡이가 뒤에 가려 보이지도 않았다. 실총처럼 총을 안쪽으로 눕혀
+   *   오른쪽(장전손잡이 쪽)을 플레이어에게 보이고, 총구는 옆으로 치운다.
+   */
+  setInspectCant(t: number): void {
+    this.inspectCant = THREE.MathUtils.clamp(t, 0, 1)
+  }
+
+  private inspectCant = 0
 
   /** 노리쇠 후퇴 고정 (탄창 종료, §2.3 t=0) */
   boltBack(): void {
@@ -414,9 +432,17 @@ export class GunRig {
     this.kickX += this.kickVX * d
     this.kickVZ += (-k * this.kickZ - c * this.kickVZ) * d
     this.kickZ += this.kickVZ * d
-    this.recoilNode.rotation.x = this.kickX * 0.055
-    this.recoilNode.position.z = this.kickZ * 0.020
-    this.recoilNode.position.y = -this.kickX * 0.004
+    // 검사 자세 — 요(yaw) 로 오른쪽 면을 카메라로 돌리고, 롤로 눕힌다.
+    //   반동은 rotation.x / position.y·z 만 쓰므로 여기서 y·z·x 를 써도 겹치지 않는다.
+    const cant = this.inspectCant
+    this.recoilNode.rotation.y = -0.62 * cant
+    this.recoilNode.rotation.z = 0.34 * cant
+    this.recoilNode.position.x = 0.045 * cant
+    // 스프링이 강하게 감쇠돼 kickX 자체는 0.33 언저리까지밖에 안 간다 —
+    //   계수를 키워 **눈에 보이는 각도**로 만든다 (실측 0.038rad = 2° → 0.14rad = 8°).
+    this.recoilNode.rotation.x = this.kickX * 0.42
+    this.recoilNode.position.z = this.kickZ * 0.055
+    this.recoilNode.position.y = this.kickX * 0.075
 
     // --- 노리쇠 ---
     if (!this.boltDriven) {
@@ -455,12 +481,14 @@ export class GunRig {
     this.sway.rotation.z = this.lowerRz + Math.sin(this.t * bf * Math.PI * 0.5) * 0.012 * amp
 
     // --- 16 이상: 미세 떨림 / 30 이상: 스파크 ---
+    //   온도가 붙으면 총이 **손에서 논다.** 임계를 16 → 9 로 내리고 진폭을 4배로.
+    //   이게 '뜨겁다' 를 화면에서 읽는 유일한 촉각 신호다.
     const hs = this.heatShown
-    if (hs >= 16) {
-      const j = THREE.MathUtils.clamp((hs - 16) / 14, 0, 1) * 0.005 + 0.0012
-      this.parts.position.x = Math.sin(this.t * 71) * j
-      this.parts.position.y = Math.sin(this.t * 83 + 1.7) * j
-      this.parts.rotation.z = 0.048 + Math.sin(this.t * 63) * j * 1.4
+    if (hs >= 9) {
+      const j = THREE.MathUtils.clamp((hs - 9) / 16, 0, 1) * 0.011 + 0.0028
+      this.parts.position.x = Math.sin(this.t * 71) * j + Math.sin(this.t * 137) * j * 0.4
+      this.parts.position.y = Math.sin(this.t * 83 + 1.7) * j + Math.sin(this.t * 151) * j * 0.35
+      this.parts.rotation.z = 0.048 + Math.sin(this.t * 63) * j * 2.2
       this.jittering = true
     } else if (this.jittering) {
       this.jittering = false

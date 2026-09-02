@@ -86,11 +86,23 @@ function stalk(
 // ---------------------------------------------------------------------------
 // 아키타입 — 규칙(속도/HP)은 core 가 정하고, 여기서는 **실루엣만** 바꾼다.
 // ---------------------------------------------------------------------------
+/**
+ * 플레이어 눈높이(Scene 의 EYE). 코앞까지 왔을 때 **눈이 마주쳐야** 한다 —
+ * 예전에는 갑각 높이를 고정값으로 두어 배회자의 안광이 1.10m 에 있었고,
+ * 1.62m 에서 내려다보는 그림이 됐다. 무서운 것은 나를 올려다보지 않는다.
+ */
+const EYE_H = 1.62
+
 interface ArchParams {
   /** 전체 크기 */
   scale: number
-  /** 갑각이 뜬 높이 (m) */
+  /** 갑각이 뜬 높이 (m) — 죽을 때 주저앉는 폭의 기준으로만 쓴다 */
   ride: number
+  /**
+   * 눈높이 배율. 1 이면 안광이 정확히 플레이어 눈높이에 온다.
+   * 다리 길이는 이 값에서 **역산**하므로(발이 바닥에 닿게) 따로 맞출 필요가 없다.
+   */
+  stand: number
   /** 다리 개수 (짝수로 맞춰 좌우 대칭) */
   legs: number
   /** 다리 길이 배율 */
@@ -111,25 +123,25 @@ function archParams(id: string): ArchParams {
   switch (id) {
     // 주자: 다리 6개, 길고 낮게 — 도약 직전의 자세
     case 'runner':
-      return { scale: 1.06, ride: 0.68, legs: 6, legLen: 1.34, wide: 0.90, freq: 3.4, tremor: 1.5, spread: 0.5, heads: 2 }
+      return { scale: 1.06, ride: 0.68, stand: 1.02, legs: 6, legLen: 1.34, wide: 0.90, freq: 3.4, tremor: 1.5, spread: 0.5, heads: 2 }
     // 비대체: 부푼 배가 복도를 메운다. 다리는 짧고 몸에 눌린다
     case 'bloat':
-      return { scale: 1.55, ride: 0.60, legs: 8, legLen: 0.80, wide: 1.55, freq: 0.8, tremor: 0.6, spread: 0.4, heads: 4 }
+      return { scale: 1.55, ride: 0.60, stand: 0.94, legs: 8, legLen: 0.80, wide: 1.55, freq: 0.8, tremor: 0.6, spread: 0.4, heads: 4 }
     // 무리: 작은 것들이 여럿
     case 'horde':
-      return { scale: 0.78, ride: 0.54, legs: 6, legLen: 1.00, wide: 0.92, freq: 2.2, tremor: 1.2, spread: 1.15, heads: 2 }
+      return { scale: 0.78, ride: 0.54, stand: 0.95, legs: 6, legLen: 1.00, wide: 0.92, freq: 2.2, tremor: 1.2, spread: 1.15, heads: 2 }
     // 기어다니는 것: 바닥에 붙어 넓게 퍼진다
     case 'crawler':
-      return { scale: 1.18, ride: 0.28, legs: 8, legLen: 1.45, wide: 1.40, freq: 1.9, tremor: 1.0, spread: 0.5, heads: 3 }
+      return { scale: 1.18, ride: 0.28, stand: 0.80, legs: 8, legLen: 1.45, wide: 1.40, freq: 1.9, tremor: 1.0, spread: 0.5, heads: 3 }
     // 추적자: 길고 높은 다리 6개, 빠른 보행, 심하게 떤다 — 도약 직전이 계속된다
     case 'stalker':
-      return { scale: 1.12, ride: 1.02, legs: 6, legLen: 1.62, wide: 0.82, freq: 3.9, tremor: 2.0, spread: 0.5, heads: 2 }
+      return { scale: 1.12, ride: 1.02, stand: 1.06, legs: 6, legLen: 1.62, wide: 0.82, freq: 3.9, tremor: 2.0, spread: 0.5, heads: 2 }
     // 거상: 천장에 닿을 만큼 크다. 느리고 무겁게, 다리 8개가 복도를 꽉 채운다
     case 'colossus':
-      return { scale: 2.05, ride: 1.10, legs: 8, legLen: 1.30, wide: 1.30, freq: 0.6, tremor: 0.5, spread: 0.4, heads: 5 }
+      return { scale: 2.05, ride: 1.10, stand: 1.34, legs: 8, legLen: 1.30, wide: 1.30, freq: 0.6, tremor: 0.5, spread: 0.4, heads: 5 }
     // 배회자: 기준선
     default:
-      return { scale: 1.20, ride: 0.86, legs: 8, legLen: 1.10, wide: 1.05, freq: 1.3, tremor: 1.0, spread: 0.55, heads: 3 }
+      return { scale: 1.20, ride: 0.86, stand: 1.00, legs: 8, legLen: 1.10, wide: 1.05, freq: 1.3, tremor: 1.0, spread: 0.55, heads: 3 }
   }
 }
 
@@ -492,7 +504,7 @@ export class EnemyRig {
     let b = this.bodies[0]
     for (const o of this.bodies) if (b && o.oz > b.oz) b = o
     const s = b ? b.scale : 1
-    this._tw.set(b ? b.ox : 0, this.params.ride * s, this.z + (b ? b.oz : 0) + 0.1 * s)
+    this._tw.set(b ? b.ox : 0, EYE_H * this.params.stand - 0.06 * s, this.z + (b ? b.oz : 0) + 0.1 * s)
     this.object.updateWorldMatrix(true, false)
     return this._tw.applyMatrix4(this.object.matrixWorld)
   }
@@ -583,7 +595,10 @@ export class EnemyRig {
       const back = b.shake * -0.26 * s
       const squash = b.shake * 0.16
       const bx = b.ox + swayX + tx
-      const by = P.ride * s + bob + sink + ty
+      // 갑각 높이를 **눈높이에서 역산**한다. 안광의 로컬 y(≈0.06)가 s 배로 붙으므로
+      //   그만큼 빼면 안광이 정확히 EYE_H × stand 에 온다.
+      const standY = EYE_H * P.stand - 0.06 * s * b.tallMul
+      const by = standY + bob + sink + ty
       const bz = this.z + b.oz + back
 
       // --- 갑각 ---
@@ -626,7 +641,9 @@ export class EnemyRig {
           gait * 0.20 + legTrem * 1.6 - collapse * 1.25 - b.shake * 0.42,
         )
         this._q.setFromEuler(this._e)
-        const ls = s * P.legLen * b.legMul
+        // 다리 길이는 몸 높이에서 역산한다 — 갑각을 올리고 다리를 그대로 두면
+        //   발이 공중에 뜬다. 발톱 끝의 로컬 y 가 −0.745 이므로 그 비율로 맞춘다.
+        const ls = (standY / 0.745) * b.legMul * P.legLen * 0.72
         this._s.set(ls, ls, ls)
         this._m.compose(this._p, this._q, this._s)
         this.legMesh.setMatrixAt(legI, this._m)

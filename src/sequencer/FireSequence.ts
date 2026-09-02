@@ -79,6 +79,8 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
     dur(300, sp),
     (t) => {
       scene.setInspect(t)
+      // 총을 안쪽으로 눕힌다 — 적에게 겨눈 채 손잡이를 당기지 않는다
+      scene.gun.setInspectCant(t)
       gun.setMagPresent(t)
     },
     easeOut,
@@ -115,8 +117,16 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
 
   // 총을 원래 자세로 되돌린다
   caption.remove()
-  await tween(dur(200, sp), (t) => scene.setInspect(1 - t), easeIn)
+  await tween(
+    dur(200, sp),
+    (t) => {
+      scene.setInspect(1 - t)
+      scene.gun.setInspectCant(1 - t)
+    },
+    easeIn,
+  )
   scene.setInspect(0)
+  scene.gun.setInspectCant(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -144,15 +154,14 @@ async function playShot(
   //   한 순간 밝아진다 — 벽도 기물도 적도 각자의 거리만큼 밝아지므로
   //   "어디서 빛이 났는지" 가 화면에 남는다. 오버레이는 그걸 못 한다.
   sfxShot(ev.heatAfter)
-  let flightMs = 90
+  // 탄이 날아가는 **선을 그리지 않는다.** 총구 화염 → (짧은 사이) → 적에게 박히는
+  //   스파크. 궤적을 지우면 "쐈다" 를 알리는 건 총의 반동뿐이라 그 튐을 크게 준다.
+  let flightMs = 62
   if (scene !== null) {
     const from = scene.gun.muzzleWorld.clone()
-    const to = scene.enemy.targetWorld.clone()
-    // 비행 시간은 거리에 비례한다 — 멀리 있는 적일수록 탄이 '가는 게' 보인다
-    flightMs = Math.round(Math.min(190, Math.max(70, 58 + from.distanceTo(to) * 4.6)))
+    flightMs = Math.round(Math.min(96, Math.max(50, 44 + scene.enemy.targetWorld.distanceTo(from) * 1.6)))
     scene.fx.muzzleFlash(from)
-    scene.fx.bullet(from, to, color, dur(flightMs, sp) / 1000)
-    scene.gun.kick(0.6 + Math.min(1, ev.heatAfter / 30))
+    scene.gun.kick(1.0 + Math.min(1.2, ev.heatAfter / 24))
     // 발사 자체의 흔들림은 작게. 큰 흔들림은 착탄에 몰아준다.
     scene.fx.shake(0.22 * shake, dur(120, sp))
   }
