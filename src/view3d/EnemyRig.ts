@@ -22,6 +22,19 @@ const MAX_BODIES = 5
 const MAX_LEGS = 8
 const MAX_EYES = 9
 
+/** 안광 기본 불투명도. 여기에 거리 감쇠를 곱한다 */
+const EYE_ALPHA = 0.88
+
+/**
+ * 안광의 거리 감쇠 — 안개(FogExp2 0.046)를 대신하는 **훨씬 완만한** 곡선.
+ *   안개:  23m 0.33 / 46m 0.011 / 69m 0.00004  → 복도 저편이 통째로 사라진다
+ *   이것:  23m 0.42 / 46m 0.18  / 69m 0.10     → 전투 거리는 거의 그대로 두고
+ *                                                복도 저편에 점 두 개를 남긴다
+ */
+function eyeFalloff(meters: number): number {
+  return 1 / (1 + Math.pow(Math.max(0, meters) / 19, 1.7))
+}
+
 /** 거리(m) → 카메라 전방 z. 30m 은 멀리, 0m 은 코앞 */
 export function distanceToZ(meters: number): number {
   return -(Math.max(0, meters) * 0.72 + 1.2)
@@ -185,6 +198,10 @@ export class EnemyRig {
   private hitT = -1
   private dieT = -1
   private dead = false
+  /** 카메라까지의 실제 거리(m). Scene 이 매 프레임 넣어 준다 — 안광 감쇠에 쓴다 */
+  private viewDist = 20
+  /** 같은 적을 두 번 만들지 않기 위한 스폰 키 (이동 중 미리 세운 적을 지킨다) */
+  private spawnKey = ''
 
   private readonly _m = new THREE.Matrix4()
   private readonly _p = new THREE.Vector3()
@@ -299,13 +316,21 @@ export class EnemyRig {
       emissive: new THREE.Color(0x000000),
       emissiveIntensity: 0,
     })
+    // 안광만 **안개 밖에** 둔다 (fog: false).
+    //   지수제곱 안개는 40m 밖을 통째로 지운다. 그러면 복도 저편에 서 있는 적이
+    //   플레이어가 코앞에 설 때까지 한 점도 안 보이다가 갑자기 나타난다 —
+    //   "적이 튀어나온다" 는 인상은 거기서 온다.
+    //   대신 거리 감쇠를 update() 에서 직접 건다 (완만한 곡선이라 60m 밖에서도
+    //   불씨 두 점이 남는다). 몸통은 그대로 안개를 탄다: 눈이 먼저 뜨고,
+    //   가까워질수록 실루엣이 안개에서 걸어 나온다.
     this.eyeMat = new THREE.MeshBasicMaterial({
       color: 0xff2f1e,
       transparent: true,
-      opacity: 0.95,
+      opacity: EYE_ALPHA,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
+      fog: false,
     })
 
     this.bodyMesh = new THREE.InstancedMesh(bodyGeo, this.mat, MAX_BODIES)
@@ -329,6 +354,12 @@ export class EnemyRig {
    *   만나도 체형·색·눈이 다르다. 없으면 스폰 순번을 쓴다.
    */
   spawn(bodyCount: number, archetypeId: string, variantSeed?: number): void {
+    // 같은 인자로 두 번 부르면 **아무 것도 하지 않는다**.
+    //   이동 구간에서 미리 세워 둔 적을 전투 진입에서 다시 spawn 하면 체형·색·눈이
+    //   새로 굴려져 눈앞에서 다른 생물로 바뀐다. 그건 컷보다 나쁘다.
+    const key = bodyCount + '|' + archetypeId + '|' + (variantSeed ?? -1)
+    if (key === this.spawnKey && !this.dead) return
+    this.spawnKey = key
     this.count = THREE.MathUtils.clamp(Math.floor(bodyCount) || 1, 1, MAX_BODIES)
     this.params = archParams(archetypeId)
     this.spawnSerial += 1
@@ -396,7 +427,7 @@ export class EnemyRig {
     this.dieT = -1
     this.hitT = -1
     this.mat.emissiveIntensity = 0
-    this.eyeMat.opacity = 0.95
+    this.eyeMat.opacity = EYE_ALPHA
     for (const m of [this.bodyMesh, this.legMesh, this.eyeMesh]) m.visible = true
     this.writeMatrices()
   }
@@ -413,6 +444,15 @@ export class EnemyRig {
       this.z = this.zFrom = this.zTo = z
       this.tweenT = 1
     }
+  }
+
+  /**
+   * 카메라와의 실제 거리(m). Scene 이 매 프레임 넣는다.
+   * 규칙상의 거리(setDistance)와 다르다 — 이동 구간에서는 적이 복도 저편에
+   * 서 있고 카메라가 달려오므로, 안광이 얼마나 보여야 하는지는 이 값이 정한다.
+   */
+  setViewDist(meters: number): void {
+    this.viewDist = Math.max(0, meters)
   }
 
   /** 손전등이 겨눌 z (Scene 이 읽어 스포트라이트 타깃을 옮긴다) */
@@ -440,6 +480,7 @@ export class EnemyRig {
     if (this.dead) return
     this.dead = true
     this.dieT = 0
+    this.spawnKey = ''
   }
 
   get isDead(): boolean {
@@ -493,11 +534,12 @@ export class EnemyRig {
     //   세우는 v1 의 방식은 "검은색으로 해달라"는 요구와 정면으로 충돌한다.
     //   그래서 거리 판독은 emissive 가 아니라 **안광**이 맡는다 (아래 writeMatrices).
     //   여기 남은 emissive 는 아주 약한 자기발광(젖은 표면의 되비침) 뿐이다.
+    // 안광은 fog 를 껐으므로 여기서 거리 감쇠를 직접 건다 (죽음 페이드와 곱한다)
+    this.eyeMat.opacity = EYE_ALPHA * eyeFalloff(this.viewDist) * (1 - dieP)
     if (dieP > 0) {
       const burst = Math.max(0, 1 - dieP / 0.22)
       this.mat.emissive.setRGB(1, 0.12 * burst + 0.02, 0.06 * burst)
       this.mat.emissiveIntensity = 0.05 + burst * 2.6
-      this.eyeMat.opacity = 0.95 * (1 - dieP)
     } else if (flash > 0) {
       // 완전 백색 1.8 은 착탄광과 겹쳐 크리처를 흰 덩어리로 지워 버렸다.
       // 살짝 따뜻한 색으로 0.85 만 — '번쩍했다' 는 남고 형태는 안 사라진다.
@@ -595,7 +637,10 @@ export class EnemyRig {
       //   가산 블렌딩이라 광량과 무관하게 보인다 → **거리 판독은 이 눈들이 한다.**
       //   먼 거리에서는 개별 눈이 1px 이하로 뭉개지므로, 거리가 멀수록 조금 키운다.
       const far = 1 - this.nearness
-      const eyeBoost = 1 + far * 2.2
+      // 규칙상 거리(far)에 더해, **실제 카메라 거리**가 30m 를 넘으면 더 키운다.
+      // 복도 저편(46~70m)에서 눈 하나가 1px 밑으로 내려가면 아예 안 그려진다.
+      const away = THREE.MathUtils.clamp((this.viewDist - 30) / 40, 0, 1)
+      const eyeBoost = 1 + far * 2.2 + away * 1.7
       const eyesOn = Math.min(MAX_EYES, b.eyes)
       for (let k = 0; k < MAX_EYES; k++) {
         const [ex, ey, ez, esz] = EYE_LOCAL[k]!

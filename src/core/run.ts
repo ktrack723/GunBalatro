@@ -31,6 +31,7 @@ import { makeRng } from './rng'
 import { ATTACHMENTS, ATT_BY_ID, STARTER_MAGAZINE, pickAttachment } from './data/attachments'
 import { SPECIALS, SPECIAL_BY_ID, startingSpecials } from './data/specials'
 import { ARCH_BY_ID, PASSIVES, makeEnemy } from './data/enemies'
+import { computeStartDistance } from './pipeline'
 import { PRICES, shopPrice } from './economy'
 import { equip, growRails } from './data/events'
 
@@ -236,6 +237,21 @@ export function enterDoor(
           stakeHpMul,
         })
   return { node, enemy, threat: d.threat }
+}
+
+/**
+ * 전투 시작 거리 **미리보기**. 상태를 소비하지 않는다.
+ *   적을 이동 구간 저편에 미리 세워 두려면(안개 속에서 서서히 드러나게 하려면)
+ *   startCombat 이 돌기 전에 최종 거리를 알아야 한다. 계산은 startCombat 과 같다:
+ *   computeStartDistance(장비, 적) + 보류 중인 시작거리 보정.
+ *   consumeCombatMods 는 run.pending 을 비우므로 여기서는 절대 부르지 않는다.
+ */
+export function previewStartDistance(run: RunState, enemy: EnemyInstance): number {
+  return (
+    computeStartDistance(run.loadout, enemy) +
+    run.pending.startDistDelta +
+    run.sectorMods.startDistDelta
+  )
 }
 
 // ---------------------------------------------------------------------------

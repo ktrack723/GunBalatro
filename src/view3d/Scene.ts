@@ -18,6 +18,9 @@ export const FOG_COLOR = 0x06070a
 
 const EYE = 1.62
 
+/** 급브레이크가 잦아드는 데 걸리는 시간(초) */
+const BRAKE_DUR = 1.7
+
 export class GameScene {
   readonly root = new THREE.Scene()
   readonly camera: THREE.PerspectiveCamera
@@ -35,9 +38,12 @@ export class GameScene {
   private t = 0
   private w = 1
   private h = 1
-  /** DOM UI 가 덮는 비율 (세로=아래, 가로=오른쪽) */
+  /** DOM UI 가 덮는 비율 — **현재 적용값** (세로=아래, 가로=오른쪽) */
   private coverBottom = 0.45
   private coverRight = 0.4
+  /** 같은 값의 목표. 이동→전투처럼 크게 바뀔 때만 여기로 천천히 따라간다 */
+  private coverBottomTo = 0.45
+  private coverRightTo = 0.4
   /** 총 앵커: "보이는 영역" 기준 정규화 좌표 (-1..1). 캔버스 NDC 가 아니다 */
   private gunU = 0.26
   private gunV = -0.60
@@ -148,6 +154,7 @@ export class GameScene {
     this.applyFlashlightMode(mode)
     if (mode === 'combat') {
       this.enemy.setVisible(true)
+      this.rail.setSprint(0)
       this.gun.setLowered(false)
       this.corridor.hideDoors()
       // ★ 컷 없음. 예전에는 여기서 카메라를 (0, EYE, 0.25) 로, 복도를 원점으로
@@ -162,9 +169,14 @@ export class GameScene {
         this.blend = 0
         this.anchored = true
       }
+      // 미리 세워 둔 적도 여기서 anchor 에 다시 맞춘다. anchor.z 는 레일 끝점과
+      // 정확히 같고(z 에는 보행 흔들림이 없다) x 만 보폭만큼 몇 cm 어긋나므로
+      // 20m 밖에서는 1px 수준이다. 대신 프레임이 밀려 레일이 끝까지 못 간
+      // 예외 상황에서도 **규칙상의 거리**가 어긋나지 않는다.
       this.enemy.object.position.set(this.anchor.x, 0, this.anchor.z)
     } else {
-      this.enemy.setVisible(false)
+      // 이동 구간이라도 이 구간 끝에서 만날 적을 미리 세워 뒀다면 계속 보여 준다.
+      this.enemy.setVisible(this.staged)
       this.gun.setLowered(true)
     }
   }
@@ -177,6 +189,7 @@ export class GameScene {
    */
   enterCombat(): void {
     this.setMode('combat')
+    this.staged = false
     this.gun.setLowered(true)
     this.gunUpIn = 0.24
     this.startleT = 0
@@ -184,6 +197,35 @@ export class GameScene {
 
   private startleT = -1
   private gunUpIn = -1
+  /** 이동 구간 끝에서 만날 적을 미리 세워 뒀는가 */
+  private staged = false
+  private readonly _end = new THREE.Vector3()
+
+  /**
+   * 이동 구간이 끝나는 자리에 적을 **미리** 세운다.
+   *   적은 전투가 시작될 때 생기는 것이 아니라, 복도 저편에 처음부터 서 있다.
+   *   달려가는 동안 안광이 안개 속에서 점점 커지고, 마지막에 실루엣이 드러난다.
+   *   그래서 급브레이크는 "적이 나타나서" 밟는 것이 아니라 **적을 봤기 때문에**
+   *   밟는 것이 된다 — 그게 원래의 순서다.
+   *
+   *   레일 끝점 = 전투 진입 시 anchor 이므로 자리가 정확히 맞고, 전투 시작에서
+   *   같은 인자로 spawn 해도 EnemyRig 가 무시하므로 생물이 바뀌지 않는다.
+   */
+  stageEnemyAhead(
+    bodyCount: number,
+    archetypeId: string,
+    variantSeed: number,
+    startDist: number,
+  ): void {
+    this.enemy.spawn(bodyCount, archetypeId, variantSeed)
+    this.rail.endPoint(this._end)
+    this.enemy.object.position.set(this._end.x, 0, this._end.z)
+    this.enemy.setDistance(startDist, startDist, false)
+    this.enemy.setVisible(true)
+    this.staged = true
+    // 적을 보러 달려간다 — 접근성 설정이 흔들림을 줄였으면 보폭도 같이 줄인다
+    this.rail.setSprint(this.fx.shakeScale)
+  }
 
   /** 전투 기준점 — 복도 위 '지금 서 있는 자리'. 적·스웨이·손전등이 여기 기준이다 */
   private readonly anchor = new THREE.Vector3(0, 0, 0)
@@ -215,6 +257,7 @@ export class GameScene {
   continueTravel(seed: number, kind: CorridorKind, seconds: number, hint: string | null = null): void {
     const x0 = this.camera.position.x
     const z0 = this.camera.position.z
+    this.staged = false
     this.corridor.setHint(hint)
     this.corridor.rebuild(seed, kind)
     this.corridor.setOriginZ(z0)
@@ -223,10 +266,40 @@ export class GameScene {
     this.setMode('travel')
   }
 
-  /** UI 가 덮는 비율을 알려준다 (세로: 아래 45%, 가로: 오른쪽 40%) */
-  setViewportInsets(bottomFrac: number, rightFrac: number): void {
-    this.coverBottom = THREE.MathUtils.clamp(bottomFrac, 0, 0.8)
-    this.coverRight = THREE.MathUtils.clamp(rightFrac, 0, 0.8)
+  /**
+   * UI 가 덮는 비율을 알려준다 (세로: 아래 45%, 가로: 오른쪽 40%).
+   *
+   * animate=true 면 **0.25초에 걸쳐** 옮긴다. 이동 구간은 인셋이 0 이라 시선축이
+   * 화면 한가운데지만 전투는 위쪽 55% 띠의 한가운데다 — 한 프레임에 바꾸면
+   * 복도(와 이제는 이미 보이는 적)가 화면 높이의 22% 만큼 위로 튄다.
+   * 적이 전투 시작에 생겨나던 때는 그 점프가 안 보였지만, 미리 세워 둔 지금은 보인다.
+   */
+  setViewportInsets(bottomFrac: number, rightFrac: number, animate = false): void {
+    const b = THREE.MathUtils.clamp(bottomFrac, 0, 0.8)
+    const r = THREE.MathUtils.clamp(rightFrac, 0, 0.8)
+    this.coverBottomTo = b
+    this.coverRightTo = r
+    if (animate) return
+    this.coverBottom = b
+    this.coverRight = r
+    this.resize(this.w, this.h)
+  }
+
+  /** 인셋 보간 — 목표에 닿을 때까지만 절두체를 다시 만든다 */
+  private tickInsets(dt: number): void {
+    const db = this.coverBottomTo - this.coverBottom
+    const dr = this.coverRightTo - this.coverRight
+    if (Math.abs(db) < 1e-4 && Math.abs(dr) < 1e-4) {
+      if (db !== 0 || dr !== 0) {
+        this.coverBottom = this.coverBottomTo
+        this.coverRight = this.coverRightTo
+        this.resize(this.w, this.h)
+      }
+      return
+    }
+    const k = 1 - Math.exp(-dt / 0.085)
+    this.coverBottom += db * k
+    this.coverRight += dr * k
     this.resize(this.w, this.h)
   }
 
@@ -338,6 +411,7 @@ export class GameScene {
     // 히트스톱: 착탄 프레임을 붙잡는 동안 **월드 시간만** 멈춘다.
     const d = this.fx.consumeFreeze(raw, real)
     this.t += d
+    this.tickInsets(real)
 
     if (this.mode === 'travel') {
       this.rail.update(d, this.camera)
@@ -370,19 +444,33 @@ export class GameScene {
 
       // 급브레이크는 **블렌드 뒤에** 얹는다. 블렌드 안에 넣었더니 lerp 계수 k 가
       //   0 에서 시작해 충격이 통째로 깎였다 — 설계값 0.30m 가 화면에서 0.048m 였다.
+      //
+      //   v2: 짧은 진동(0.9초·감쇠 5.2·주파수 8~13)은 "덜컹" 하고 끝나 버려서
+      //   **달려오다 멈췄다**가 아니라 그냥 화면이 떨린 것으로 읽혔다.
+      //   급제동은 진동이 아니라 **관성**이다: 한 번 크게 쏠렸다가 반대로 넘어가고,
+      //   그게 서너 번 줄어들며 자세를 되찾는다. 그래서
+      //     · 지속시간 0.9 → 1.7초, 감쇠 5.2 → 1.85 (왕복이 3~4번 보인다)
+      //     · 진폭 앞뒤 0.34 → 0.62m, 좌우 0 → 0.34m (좌우가 핵심이다.
+      //       달리다 서면 몸은 앞뒤로 흔들리는 게 아니라 옆으로 넘어간다)
+      //     · 주파수 8.5~13 → 4.6~7.6 (느릴수록 '무게'가 붙는다)
+      //   흔들림 설정(강/약/끔)을 그대로 곱한다 — 끄면 아무 일도 일어나지 않는다.
       if (this.startleT >= 0) {
         this.startleT += real
         const t = this.startleT
-        if (t > 0.9) {
+        const m = this.fx.shakeScale
+        if (t > BRAKE_DUR || m <= 0) {
           this.startleT = -1
         } else {
-          const e = Math.exp(-t * 5.2)
-          const onset = 1 - Math.exp(-t * 26)
-          this.camera.position.z += 0.34 * e * onset
-          this.camera.position.y -= 0.055 * e * Math.sin(t * 12)
-          this.camera.rotateX(0.125 * e * Math.sin(t * 13 + 0.35))
-          this.camera.rotateY(0.045 * e * Math.sin(t * 10 + 2.1))
-          this.camera.rotateZ(0.060 * e * Math.sin(t * 8.5 + 1.0))
+          const onset = 1 - Math.exp(-t * 30) // 충격은 즉시 걸린다 (급제동)
+          const a = m * onset * Math.exp(-t * 1.85)
+          // 앞뒤: 멈추는 순간 뒤로 밀렸다가 앞으로 되쏠리기를 반복한다
+          this.camera.position.z += 0.62 * a * Math.cos(t * 6.6)
+          // 좌우: 발을 짚으며 몸이 크게 왔다갔다한다
+          this.camera.position.x += 0.34 * a * Math.sin(t * 4.6 + 0.35)
+          this.camera.position.y += 0.13 * a * Math.cos(t * 7.6 + 0.5) - 0.04 * a
+          this.camera.rotateX(0.16 * a * Math.cos(t * 6.6 + 0.4))
+          this.camera.rotateY(0.135 * a * Math.sin(t * 4.6))
+          this.camera.rotateZ(0.155 * a * Math.sin(t * 4.0 + 1.0))
         }
       }
       if (this.gunUpIn >= 0) {
@@ -414,6 +502,10 @@ export class GameScene {
       )
     }
     this.flashlight.target.position.copy(this._lt)
+
+    // 안광은 안개를 안 타므로(EnemyRig) 감쇠에 쓸 **실제 거리**를 여기서 넣는다.
+    // 이동 중에는 복도 저편(50~70m), 전투에서는 규칙상의 거리다.
+    this.enemy.setViewDist(Math.abs(this.camera.position.z - this.enemy.bodyZ))
 
     this.gun.update(d)
     // 동적으로 붙은 자식(스파크 등)도 뷰모델 레이어에 유지한다
