@@ -19,7 +19,6 @@ import type {
 } from '../core/types'
 import {
   advanceNode,
-  applyReward,
   armoryStock,
   consumeCombatMods,
   currentNode,
@@ -27,11 +26,11 @@ import {
   newRun,
   reliquaryStock,
   rollDoors,
-  rollRewards,
+  rollRewardRoom,
   runRng,
 } from '../core/run'
 import { fire, startCombat } from '../core/combat'
-import { combatBrass, skipRewardBrass } from '../core/economy'
+import { combatBrass } from '../core/economy'
 import { pickDerelict } from '../core/data/events'
 
 import { hasSave, loadRun, saveRun } from '../ui/save'
@@ -71,10 +70,10 @@ import { makeViewRng, viewSeedOf, type ViewRng } from '../view3d/postShader'
 // ---------------------------------------------------------------------------
 
 /** 이동 구간 길이 (PRESENTATION §5) */
-const TRAVEL_MIN = 3.5
-const TRAVEL_MAX = 6
+const TRAVEL_MIN = 1.75
+const TRAVEL_MAX = 3
 /** 문을 열고 들어가는 짧은 구간 */
-const DOOR_TRAVEL = 2.2
+const DOOR_TRAVEL = 1.1
 /** 포스트 셰이더 비네트 기본값 (PostPass 생성자와 같은 값 — '어둠이 예산이다') */
 const BASE_VIGNETTE = 0.42
 /** 전투 노드에서 고를 복도 종류 (core 에 NodeKind→CorridorKind 매핑이 없어 view 가 정한다) */
@@ -534,7 +533,7 @@ export class App {
 
     const sc = this.scene
     if (sc !== null) {
-      sc.setMode('combat')
+      sc.enterCombat()
       sc.setZoom(1)
       sc.fx.clearScreenEffects()
       sc.fx.setVignette(BASE_VIGNETTE)
@@ -559,9 +558,8 @@ export class App {
     this.absorbStats(run, s)
 
     if (outcome === 'win') {
+      // 탄피는 자동으로 들어오지 않는다 — 보상방에서 직접 집는다 (claimBrass)
       const brass = combatBrass(s, threat)
-      run.loadout.brass += brass
-      run.stats.brassEarned += brass
       run.stats.combatsWon += 1
       this.teardownCombat()
       await this.rewardRoom(run, threat, brass)
@@ -653,20 +651,7 @@ export class App {
   // =========================================================================
 
   private async rewardRoom(run: RunState, threat: Threat, brass: number): Promise<void> {
-    const items = rollRewards(run, threat)
-    const res = await showRewards(this.ui, run, items, brass)
-    if (res.pick !== null) {
-      const item = items[res.pick]
-      if (item !== undefined) {
-        const line = applyReward(run, item)
-        toast(line)
-      }
-    } else {
-      const skip = skipRewardBrass(run.stake)
-      run.loadout.brass += skip
-      run.stats.brassEarned += skip
-      toast('보상을 넘기고 탄피 +' + skip)
-    }
+    await showRewards(this.ui, run, rollRewardRoom(run, threat, brass))
   }
 
   /** 런 종료. showResult 가 recordResult + clearRun 을 이미 수행한다 (중복 호출 금지) */

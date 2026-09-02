@@ -726,3 +726,21 @@ html, body {
   .rar, .pick-icon, .pick, .ammo-card, .rack-slot,
   .pick-icon::after, .pick::before, .pick::after, .ammo-card::after, .rack-slot::after { animation: none !important; }
 }
+
+
+/* 전투 진입 — 복도에서 멈추고 적이 나타난 뒤에 UI 가 떠오른다.
+   컷 없이 이어지는 화면 위로 계기판이 '켜지는' 순서라, 지연이 곧 연출이다. */
+@keyframes combatIntro {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+.combat-root.intro > * { animation: combatIntro .34s cubic-bezier(.2,.9,.3,1) both; }
+.combat-root.intro > .viewport-space { animation: none; }  /* 3D 가 비치는 칸은 건드리지 않는다 */
+.combat-root.intro > *:nth-child(2) { animation-delay: .30s; }
+.combat-root.intro > *:nth-child(3) { animation-delay: .36s; }
+.combat-root.intro > *:nth-child(4) { animation-delay: .42s; }
+.combat-root.intro > *:nth-child(5) { animation-delay: .48s; }
+.combat-root.intro > *:nth-child(6) { animation-delay: .54s; }
+@media (prefers-reduced-motion: reduce) {
+  .combat-root.intro > * { animation: none; }
+}

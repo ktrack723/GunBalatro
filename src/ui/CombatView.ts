@@ -59,7 +59,7 @@ function showRoundInfo(id: string | null, own?: number): void {
   void popover({
     title: def.name,
     accent: def.color,
-    lines: [def.text],
+    lines: [def.text, '같은 탄을 한 탄창에 겹치면 자기 값이 준다 — 2번째 68%, 3번째부터 45%.'],
     rows: [
       ['데미지', String(def.dmg)],
       ['온도', '+' + def.heat.toFixed(2)],
@@ -115,7 +115,8 @@ export class CombatView {
   // -------------------------------------------------------------------------
   private build(): void {
     clear(this.host)
-    const root = add(this.host, 'div', 'combat-root')
+    // 전투 UI 는 적이 등장하고 카메라가 자세를 고쳐잡은 다음에 떠오른다 (§진입 연출)
+    const root = add(this.host, 'div', 'combat-root intro')
     this.root = root
 
     // --- 적 ---

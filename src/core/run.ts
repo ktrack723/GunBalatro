@@ -12,6 +12,7 @@ import type {
   NodeKind,
   Rarity,
   RewardItem,
+  RewardRoom,
   Rng,
   RunState,
   RunStats,
@@ -25,7 +26,6 @@ import {
   MAX_RAIL_SLOTS,
   NODE_MUL,
   THREAT_RARITY_W,
-  THREAT_REWARD_COUNT,
 } from './types'
 import { makeRng } from './rng'
 import { ATTACHMENTS, ATT_BY_ID, STARTER_MAGAZINE, pickAttachment } from './data/attachments'
@@ -253,46 +253,58 @@ function equippedIds(run: RunState): Set<string> {
 }
 
 /**
- * 보상 한 장의 특수탄 발수 3/2/1.
- * 2/2/1 로 줄여 봤더니(난이도 상향 R1~R6) 특수탄이 없는 탄창이 대부분이 되어
- * **배열 자체가 사라졌다** — 초보/숙련 생존율 격차가 27% → 5% 로 무너졌다.
- * 특수탄은 이 게임의 '순서' 축이다. 희소성은 공급이 아니라 **소비**(센 적)로 만든다.
+ * 보상방 하나의 특수탄 발수.
+ * 예전(3/2/1)은 '고르면' 받는 값이었다. 이제는 **매 전투 무조건** 받으므로 그대로 두면
+ * 공급이 두 배가 된다. 2/1/1 로 내린다 — 총량은 비슷하되 받는 리듬이 규칙적이다.
  */
 function specialCountFor(rarity: Rarity): number {
-  if (rarity === 'common') return 3
-  if (rarity === 'uncommon') return 2
+  if (rarity === 'common') return 2
   return 1
 }
 
-export function rollRewards(run: RunState, threat: Threat): RewardItem[] {
+/**
+ * 보상방을 굴린다 — 탄피(호출부가 채운다) · 특수탄 1묶음 · 부착물 3택.
+ * 부착물은 각 칸을 따로 굴리므로 세 장의 등급이 서로 다를 수 있다(위험도가 높을수록 위로).
+ */
+export function rollRewardRoom(run: RunState, threat: Threat, brass: number): RewardRoom {
   return withRng(run, (r) => {
-    const n = THREAT_REWARD_COUNT[threat]
-    const out: RewardItem[] = []
     const taken = equippedIds(run)
-    // 부착물 : 특수탄 = (n-1) : 1
-    for (let i = 0; i < n; i += 1) {
-      const wantSpecial = i === n - 1
-      let rarity = rollRarity(r, threat)
-      if (rarity === 'relic' && run.relicsSeen >= 2) rarity = 'rare'
 
-      if (wantSpecial) {
-        const pool = SPECIALS.filter((s) => s.rarity === rarity)
-        const def = pool.length > 0 ? r.pick(pool) : r.pick(SPECIALS)
-        out.push({ t: 'special', special: def, count: specialCountFor(def.rarity) })
-        continue
-      }
+    const spRarity = rollRarity(r, threat)
+    const spPool = SPECIALS.filter((s) => s.rarity === spRarity)
+    const def = spPool.length > 0 ? r.pick(spPool) : r.pick(SPECIALS)
+
+    const attachments: Attachment[] = []
+    for (let i = 0; i < 3; i += 1) {
+      let rarity = rollRarity(r, threat)
+      // 유물은 런당 2장까지만 굴러 나온다 (relicsSeen 은 실제로 집었을 때만 오른다)
+      if (rarity === 'relic' && run.relicsSeen >= 2) rarity = 'rare'
       const a = pickAttachment(r, { rarity, exclude: taken })
-      if (a === null) {
-        const def = r.pick(SPECIALS)
-        out.push({ t: 'special', special: def, count: specialCountFor(def.rarity) })
-        continue
-      }
+      if (a === null) continue
       taken.add(a.id)
-      if (a.rarity === 'relic') run.relicsSeen += 1
-      out.push({ t: 'attachment', attachment: a })
+      attachments.push(a)
     }
-    return out
+
+    return { brass, special: { def, count: specialCountFor(def.rarity) }, attachments }
   })
+}
+
+/** 보상방에서 부착물 한 장을 가져간다 */
+export function claimAttachment(run: RunState, a: Attachment): string {
+  if (a.rarity === 'relic') run.relicsSeen += 1
+  return applyReward(run, { t: 'attachment', attachment: a })
+}
+
+/** 보상방에서 특수탄 묶음을 가져간다 */
+export function claimSpecial(run: RunState, def: SpecialDef, count: number): string {
+  return applyReward(run, { t: 'special', special: def, count })
+}
+
+/** 보상방에서 탄피를 가져간다 */
+export function claimBrass(run: RunState, n: number): string {
+  run.loadout.brass += n
+  run.stats.brassEarned += n
+  return '탄피 ' + n + '개를 챙겼다.'
 }
 
 export function applyReward(run: RunState, item: RewardItem): string {

@@ -169,6 +169,22 @@ export class GameScene {
     }
   }
 
+  /**
+   * 전투 진입 — 복도에서 걸음을 **멈추는 순간**이다.
+   *   컷도 페이드도 없다. 걸어온 자리에 그대로 선 채로 적이 나타나고,
+   *   카메라가 급브레이크를 밟는다(뒤로 밀리고 위로 들렸다가 자세를 고쳐잡는다).
+   *   총은 반쯤 내린 이동 자세에서 조금 늦게 올라온다 — 놀란 다음에 꺼내는 순서다.
+   */
+  enterCombat(): void {
+    this.setMode('combat')
+    this.gun.setLowered(true)
+    this.gunUpIn = 0.24
+    this.startleT = 0
+  }
+
+  private startleT = -1
+  private gunUpIn = -1
+
   /** 전투 기준점 — 복도 위 '지금 서 있는 자리'. 적·스웨이·손전등이 여기 기준이다 */
   private readonly anchor = new THREE.Vector3(0, 0, 0)
   private anchored = false
@@ -350,6 +366,28 @@ export class GameScene {
         this.camera.position.lerpVectors(this.blendFrom, this._bp, k)
       } else {
         this.camera.position.copy(this._bp)
+      }
+
+      // 급브레이크는 **블렌드 뒤에** 얹는다. 블렌드 안에 넣었더니 lerp 계수 k 가
+      //   0 에서 시작해 충격이 통째로 깎였다 — 설계값 0.30m 가 화면에서 0.048m 였다.
+      if (this.startleT >= 0) {
+        this.startleT += real
+        const t = this.startleT
+        if (t > 0.9) {
+          this.startleT = -1
+        } else {
+          const e = Math.exp(-t * 5.2)
+          const onset = 1 - Math.exp(-t * 26)
+          this.camera.position.z += 0.34 * e * onset
+          this.camera.position.y -= 0.055 * e * Math.sin(t * 12)
+          this.camera.rotateX(0.125 * e * Math.sin(t * 13 + 0.35))
+          this.camera.rotateY(0.045 * e * Math.sin(t * 10 + 2.1))
+          this.camera.rotateZ(0.060 * e * Math.sin(t * 8.5 + 1.0))
+        }
+      }
+      if (this.gunUpIn >= 0) {
+        this.gunUpIn -= real
+        if (this.gunUpIn < 0) this.gun.setLowered(false)
       }
       // 복도 스트리밍은 카메라가 복도 안 어디쯤인지로 계속 굴린다 (트레드밀 유지)
       const prog = (this.corridor.originZ - this.camera.position.z) / CORRIDOR_LENGTH

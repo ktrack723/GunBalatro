@@ -97,15 +97,33 @@ function safe(fn: (() => void) | undefined, label: string): void {
 /**
  * STEP 1~7. s 를 변형하고 out 에 이벤트를 push 한다.
  */
+/**
+ * 같은 특수탄을 한 탄창에 겹쳤을 때 **자기 값**에 걸리는 배수 (2번째 0.68, 3번째부터 0.45).
+ *
+ * 소이·소이·철갑 한 줄이 모든 빌드의 정답이었다 — 예열탄을 도배하고 큰 걸 마지막에
+ * 얹으면 끝이라, 탄창을 '짜는' 결정이 '제일 센 탄을 몇 장 넣느냐' 로 납작해졌다.
+ * 서로 **다른** 탄을 엮는 콤보는 그대로 두고 도배만 벌한다. 부착물이 얹어주는 보너스는
+ * 건드리지 않는다 (그건 그 부착물의 값이다).
+ */
+const REPEAT_MUL = [1, 0.68, 0.45] as const
+
+function repeatMul(s: CombatState, def: { id: string } | null): number {
+  if (def === null) return 1
+  let n = 0
+  for (const r of s.magFired) if (r.special === def.id) n += 1
+  return REPEAT_MUL[Math.min(n, REPEAT_MUL.length - 1)] ?? 0.3
+}
+
 export function fireOneShot(s: CombatState, round: Round, index: number, plan: Round[], out: FireEvent[]): void {
   const def = defOf(round)
+  const rep = repeatMul(s, def)
 
   // ---- STEP 1: 기본 데미지 -------------------------------------------------
-  let dmg = (def !== null ? def.dmg : BASIC_DMG) + s.pendingNextDmg + s.magDmgBonus
+  let dmg = (def !== null ? Math.round(def.dmg * rep) : BASIC_DMG) + s.pendingNextDmg + s.magDmgBonus
   s.pendingNextDmg = 0
 
   // ---- STEP 2: 탄 고유 온도 ------------------------------------------------
-  let heatGain = def !== null ? def.heat : BASIC_HEAT
+  let heatGain = def !== null ? def.heat * rep : BASIC_HEAT
 
   const ctx: FireCtx = {
     s,

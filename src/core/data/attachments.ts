@@ -86,8 +86,9 @@ export const ATTACHMENTS: Attachment[] = [
     // 실측 42,587발 중 거리 ≤10 인 발사는 15.9%. 기대치 60×0.19=11.6 은
     // 커먼 연장 총열의 무조건 +14 보다 낮았다 — 조건부가 무조건보다 약하면 안 된다.
     // 실측 거리 ≤10 발사는 8.8% 뿐 — +120 의 기대치는 무조건 발동 커먼보다 낮았다.
-    text: '거리 10m 이하면 모든 탄 DMG +200',
-    hooks: { onFire: (c) => { if (c.s.distance <= 10) { c.dmg += 200; proc(c) } } },
+    // 시작 거리가 26m 로 좁아진 뒤 조건 성립률이 크게 올랐다 (채택 416/600, 리프트 +7.4%).
+    text: '거리 10m 이하면 모든 탄 DMG +175',
+    hooks: { onFire: (c) => { if (c.s.distance <= 10) { c.dmg += 175; proc(c) } } },
   },
   {
     id: 'br_catalyst',
@@ -205,10 +206,10 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'handguard',
     rarity: 'uncommon',
     // 계수 1.1 은 탄창당 +11.0 로 레어(순교 +0.5)를 크게 넘었다 — 등급 역전.
-    text: '이미 쏜 탄 수 ×0.7 만큼 HEAT + (상한 +2.8)',
+    text: '이미 쏜 탄 수 ×0.55 만큼 HEAT + (상한 +2.2)',
     hooks: {
       onFire: (c) => {
-        const v = Math.min(c.index, 4) * 0.7
+        const v = Math.min(c.index, 4) * 0.55
         if (v <= 0) return
         c.heatGain += v
         proc(c)
@@ -221,8 +222,8 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'handguard',
     rarity: 'rare',
     // 이 부위에서 가장 까다로운 조건이다. 켜졌을 때 확실히 레어값을 해야 한다.
-    text: '발사 전 온도 10 이상이면 HEAT +5.5',
-    hooks: { onFire: (c) => { if (c.heatBefore >= 10) { c.heatGain += 5.5; proc(c) } } },
+    text: '발사 전 온도 10 이상이면 HEAT +5.0',
+    hooks: { onFire: (c) => { if (c.heatBefore >= 10) { c.heatGain += 5.0; proc(c) } } },
   },
   {
     id: 'hg_martyr',
@@ -367,8 +368,9 @@ export const ATTACHMENTS: Attachment[] = [
     name: '간이 거리계',
     slot: 'stock',
     rarity: 'common',
-    text: '사격 거리 소모 −1m',
-    mods: { fireCost: -1 },
+    // 커먼인데 리프트 +9.8% — 행동 수를 건드리는 카드는 대가가 있어야 한다.
+    text: '사격 거리 소모 −1m · 전투 시작 거리 −6m',
+    mods: { fireCost: -1, startDist: -6 },
   },
   {
     id: 'st_fixed',
@@ -435,8 +437,10 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // 속도 −3 은 배회자(5) 를 2 로 만들어 행동 수 2.5배 — 리프트 +33.7%. −2 로 내려도
     // +26.8%. 속도 축은 곱셈이라 대가 없이는 못 준다 — 시작 거리 −8m 을 붙인다.
-    text: '적 접근 속도 −2 · 전투 시작 거리 −8m',
-    mods: { enemySpeed: -2, startDist: -8 },
+    // 속도 축은 행동 수를 직접 늘려 곱셈처럼 작동한다 — 리프트 +18.8%.
+    // 페이싱이 3~5행동으로 좁아진 뒤로는 −2 하나가 전투를 두 배로 만든다.
+    text: '적 접근 속도 −1 · 전투 시작 거리 −4m',
+    mods: { enemySpeed: -1, startDist: -4 },
   },
   {
     id: 'st_bandolier',
@@ -562,8 +566,10 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'magazine',
     rarity: 'relic',
     // 용량 사다리를 1/2/3/4/5/6/7/12 로 벌린다 — 유물이 한눈에 최대 실루엣이 된다.
-    text: '용량 12. 온도 획득 −30%',
-    mag: { cap: 12, heatGainMul: 0.7 },
+    // 용량 12 는 리프트 +25.2%(n=105) — 유물이어도 '집으면 이긴다' 는 선을 넘었다.
+    // 용량은 온도 누적의 지수축이라 값을 조금만 줄여도 크게 내려온다.
+    text: '용량 9. 온도 획득 −25%',
+    mag: { cap: 9, heatGainMul: 0.75 },
   },
   {
     id: 'mg_annex',

@@ -38,7 +38,3 @@ export function combatBrass(s: CombatState, threat: Threat): number {
   const heat = Math.floor(s.peakHeat / 10) * 2
   return base + dist + heat + (THREAT_BRASS[threat] ?? 0)
 }
-
-export function skipRewardBrass(stake: number): number {
-  return stake >= 2 ? 0 : 20
-}

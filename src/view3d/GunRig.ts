@@ -190,6 +190,8 @@ export class GunRig {
   private stage = 0
   private stagePulse = 0
   private lowered = false
+  private lowerX = 0
+  private lowerRz = 0
   private t = 0
   private sparkAcc = 0
   private jittering = false
@@ -433,16 +435,24 @@ export class GunRig {
     this.fx.heatDistortion(THREE.MathUtils.clamp((this.heatShown - 12) / 30, 0, 1))
 
     // --- 자세 (전투 / 이동) ---
-    const targetRx = this.lowered ? 0.55 : 0
-    const targetY = this.lowered ? -0.16 : 0
-    this.sway.rotation.x += (targetRx - this.sway.rotation.x) * Math.min(1, d * 5)
-    this.sway.position.y += (targetY - this.sway.position.y) * Math.min(1, d * 5)
+    //   이동 중에는 총을 **반쯤 내린다**. 0.55rad(31°) 는 화면에서 거의 안 내려간 것처럼
+    //   보였다 — 총구를 바닥으로 더 눕히고, 아래·오른쪽으로 빼서 시야를 비운다.
+    //   전투로 넘어올 때 이 자세에서 올라오는 것이 곧 '총을 꺼내는' 동작이다.
+    const targetRx = this.lowered ? 0.82 : 0
+    const targetY = this.lowered ? -0.24 : 0
+    const targetX = this.lowered ? 0.055 : 0
+    const targetRz = this.lowered ? -0.16 : 0
+    const poseK = Math.min(1, d * 5)
+    this.sway.rotation.x += (targetRx - this.sway.rotation.x) * poseK
+    this.sway.position.y += (targetY - this.sway.position.y) * poseK
+    this.lowerX += (targetX - this.lowerX) * poseK
+    this.lowerRz += (targetRz - this.lowerRz) * poseK
 
     // --- 호흡 / 보행 스웨이 ---
     const bf = this.lowered ? 2.1 : 0.62
     const amp = this.lowered ? 1 : 0.4
-    this.sway.position.x = Math.sin(this.t * bf * Math.PI) * 0.006 * amp
-    this.sway.rotation.z = Math.sin(this.t * bf * Math.PI * 0.5) * 0.012 * amp
+    this.sway.position.x = this.lowerX + Math.sin(this.t * bf * Math.PI) * 0.006 * amp
+    this.sway.rotation.z = this.lowerRz + Math.sin(this.t * bf * Math.PI * 0.5) * 0.012 * amp
 
     // --- 16 이상: 미세 떨림 / 30 이상: 스파크 ---
     const hs = this.heatShown

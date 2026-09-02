@@ -433,6 +433,18 @@ export type RewardItem =
   | { t: 'attachment'; attachment: Attachment }
   | { t: 'special'; special: SpecialDef; count: number }
 
+/**
+ * 전투 보상방 (슬더스식). 예전에는 3~4장 중 **하나만** 고르고 나머지는 버렸는데,
+ * 그러면 탄피는 자동 지급, 특수탄은 '고르면 딸려오는 것' 이라 획득의 감각이 없었다.
+ * 이제 항목이 셋이고 각각을 눌러서 가져간다 — 부착물만 그 자리에서 3택이다.
+ */
+export interface RewardRoom {
+  brass: number
+  special: { def: SpecialDef; count: number } | null
+  /** 부착물 항목을 누르면 뜨는 3택 (남는 것이 없으면 빈 배열) */
+  attachments: Attachment[]
+}
+
 // ---------------------------------------------------------------------------
 // 이벤트 (폐허)
 // ---------------------------------------------------------------------------
@@ -465,7 +477,7 @@ export const BASE_HEAT_CARRY = 0.5
 export const BASE_CAP = 5
 export const MAX_RAIL_SLOTS = 2
 
-export const HP_BASE = 340
+export const HP_BASE = 308
 export const HP_GROWTH = 1.91
 export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.8, boss: 2.2 } as const
@@ -473,7 +485,6 @@ export const NODE_MUL = { small: 1.0, big: 1.8, boss: 2.2 } as const
 export const THREAT_HP_MUL: Record<Threat, number> = { 1: 1.05, 2: 1.35, 3: 3.7 }
 export const THREAT_SPEED_ADD: Record<Threat, number> = { 1: 0, 2: 1, 3: 2 }
 export const THREAT_BRASS: Record<Threat, number> = { 1: 0, 2: 15, 3: 35 }
-export const THREAT_REWARD_COUNT: Record<Threat, number> = { 1: 3, 2: 3, 3: 4 }
 /** [common, uncommon, rare, relic] */
 export const THREAT_RARITY_W: Record<Threat, [number, number, number, number]> = {
   1: [70, 26, 4, 0],

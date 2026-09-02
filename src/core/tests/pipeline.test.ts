@@ -348,3 +348,32 @@ describe('신규 적', () => {
     expect(healed).toBeLessThanOrEqual(Math.round(10000 * 0.02) * 6)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 같은 탄 반복 감쇠 — 소이·소이·철갑 도배를 막는 규칙
+// ---------------------------------------------------------------------------
+describe('반복 감쇠', () => {
+  it('같은 특수탄을 겹치면 2번째·3번째의 자기 값이 줄어든다', () => {
+    const l = loadout([], { sp_ap: 3 })
+    const r = shoot(l, [makeRound('sp_ap'), makeRound('sp_ap'), makeRound('sp_ap')])
+    expect(r.shots).toHaveLength(3)
+    // 온도가 발마다 오르므로 절대값은 비교할 수 없다 — 같은 온도로 나눈 '칩' 을 본다
+    const chips = r.shots.map((s) => s.dmg)
+    expect(chips[1]! / chips[0]!).toBeLessThan(0.8)
+    expect(chips[2]! / chips[0]!).toBeLessThan(0.6)
+  })
+
+  it('서로 다른 특수탄을 엮는 콤보는 감쇠하지 않는다', () => {
+    const l = loadout([], { sp_ap: 1, sp_incendiary: 1 })
+    const solo = shoot(loadout([], { sp_ap: 1 }), [makeRound('sp_ap')])
+    const combo = shoot(l, [makeRound('sp_incendiary'), makeRound('sp_ap')])
+    // 2번째 발이지만 탄종이 다르므로 자기 칩은 온전하다
+    expect(combo.shots[1]!.dmg).toBeGreaterThanOrEqual(solo.shots[0]!.dmg)
+  })
+
+  it('기본탄은 감쇠하지 않는다 (탄창 대부분이 기본탄이다)', () => {
+    const r = shoot(loadout(), [basicRound(), basicRound(), basicRound()])
+    expect(r.shots[0]!.dmg).toBe(r.shots[1]!.dmg)
+    expect(r.shots[1]!.dmg).toBe(r.shots[2]!.dmg)
+  })
+})

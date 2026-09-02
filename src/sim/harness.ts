@@ -3,16 +3,15 @@
 //   시뮬레이터가 밸런스의 유일한 오라클이다. 봇의 판단이 편향되면 측정이 못 쓴다 —
 //   그래서 보상/상점 선택은 하드코딩 우선순위가 아니라 **실측 화력 증가분**으로 한다.
 // ============================================================================
-import type { Attachment, FireEvent, RewardItem, RunState, Threat } from '../core/types'
+import type { Attachment, FireEvent, RunState, Threat } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import { ATT_BY_ID } from '../core/data/attachments'
 import { makeRng } from '../core/rng'
 import { fire, startCombat } from '../core/combat'
 import { computeFireCost } from '../core/pipeline'
-import { combatBrass, skipRewardBrass } from '../core/economy'
+import { combatBrass } from '../core/economy'
 import {
   advanceNode,
-  applyReward,
   armoryStock,
   buy,
   consumeCombatMods,
@@ -21,7 +20,10 @@ import {
   newRun,
   reliquaryStock,
   rollDoors,
-  rollRewards,
+  rollRewardRoom,
+  claimAttachment,
+  claimBrass,
+  claimSpecial,
   withRng,
 } from '../core/run'
 import type { ArmoryEntry } from '../core/run'
@@ -273,39 +275,38 @@ export function firepower(run: RunState): number {
 }
 
 // ---------------------------------------------------------------------------
+/**
+ * 보상방 (슬더스식) — 탄피와 특수탄은 공짜라 무조건 챙기고, 부착물만 3택이다.
+ * 부착물은 **바꾸면 손해일 수 있다**(칸이 차 있으면 교체다). 그래서 화력이 오르는
+ * 경우에만 집는다 — 봇이 무조건 집으면 후반에 좋은 부품을 스스로 버린다.
+ */
 function takeReward(run: RunState, threat: Threat, trace?: TraceLine[]): void {
-  const items = rollRewards(run, threat)
-  const before = firepower(run)
-  let best: RewardItem | null = null
-  let bestV = 0
+  const room = rollRewardRoom(run, threat, 0)
+  claimBrass(run, room.brass)
+  if (room.special !== null) {
+    claimSpecial(run, room.special.def, room.special.count)
+    trace?.push({ k: 'reward', label: room.special.def.name + ' x' + room.special.count })
+  }
 
-  for (const item of items) {
+  const before = firepower(run)
+  let best: Attachment | null = null
+  let bestV = 0
+  for (const a of room.attachments) {
     const snap = snapshot(run)
-    applyReward(run, item)
+    claimAttachment(run, a)
     const v = firepower(run) - before
     restore(run, snap)
-    // 특수탄은 즉시 화력이 안 오르지만 소모품 재고가 곧 후반 화력이다
-    const score = item.t === 'special' ? v + item.count * before * 0.02 : v
-    if (score > bestV) {
-      bestV = score
-      best = item
+    if (v > bestV) {
+      bestV = v
+      best = a
     }
   }
   if (best === null) {
-    const gain = skipRewardBrass(run.stake)
-    run.loadout.brass += gain
-    run.stats.brassEarned += gain
-    trace?.push({ k: 'skip', gain })
+    trace?.push({ k: 'skip', gain: 0 })
     return
   }
-  applyReward(run, best)
-  trace?.push({
-    k: 'reward',
-    label:
-      best.t === 'attachment'
-        ? best.attachment.name + ' [' + best.attachment.slot + '/' + best.attachment.rarity + ']'
-        : best.special.name + ' x' + best.count,
-  })
+  claimAttachment(run, best)
+  trace?.push({ k: 'reward', label: best.name + ' [' + best.slot + '/' + best.rarity + ']' })
 }
 
 function purchaseValue(run: RunState, e: ArmoryEntry, before: number): number {
