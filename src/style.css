@@ -521,6 +521,15 @@ html, body {
   overflow-x: auto; scrollbar-width: none;
 }
 .ammo-row::-webkit-scrollbar { display: none; }
+/* 꾹 눌러 설명 — iOS 사파리의 네이티브 콜아웃(복사/찾아보기)이 뜨면 길게 누르기가
+   통째로 가로채인다. 선택·콜아웃·드래그를 전부 끈다. */
+.ammo-card, .mag-slot, .rack-slot {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .ammo-card {
   position: relative; flex: 0 0 auto;
   width: 74px; border-radius: var(--radius);

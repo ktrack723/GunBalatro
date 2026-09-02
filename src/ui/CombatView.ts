@@ -11,7 +11,7 @@ import { BASIC_DMG, BASIC_HEAT, RAIL_ACCEPTS, SLOT_LABEL } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import { basicRound, makeRound, swapAttachment } from '../core/combat'
 import { computeHeatCarry } from '../core/pipeline'
-import { add, Bin, clamp, clear, el, fmtInt, on, orderMark, setClass } from './dom'
+import { add, Bin, clamp, clear, el, fmtInt, longPress, on, orderMark, setClass } from './dom'
 import { popover } from './popover'
 import { sfx } from '../audio/Sfx'
 
@@ -40,6 +40,37 @@ export function heatColor(heat: number): string {
 /** 온도 게이지는 로그 스케일 — 1~60 이 한 바에 들어가야 한다 */
 function heatFrac(heat: number): number {
   return clamp(Math.log(Math.max(1, heat)) / Math.log(60), 0, 1)
+}
+
+/**
+ * 탄 설명 팝오버. 탄 선택 줄과 장전된 탄창 슬롯이 같은 내용을 보여준다 —
+ * 같은 것을 두 군데서 다르게 설명하면 그게 더 헷갈린다.
+ */
+function showRoundInfo(id: string | null, own?: number): void {
+  if (id === null) {
+    void popover({
+      title: '기본탄',
+      lines: ['수량 무한. 자체 효과는 없고 부착물이 얹어주는 수치만 갖는다.'],
+      rows: [
+        ['데미지', String(BASIC_DMG)],
+        ['온도', '+' + BASIC_HEAT.toFixed(2)],
+        ['보유', '무한'],
+      ],
+    })
+    return
+  }
+  const def = SPECIAL_BY_ID[id]
+  if (def === undefined) return
+  void popover({
+    title: def.name,
+    accent: def.color,
+    lines: [def.text],
+    rows: [
+      ['데미지', String(def.dmg)],
+      ['온도', '+' + def.heat.toFixed(2)],
+      ...(own === undefined ? [] : ([['보유', String(own) + '발']] as Array<[string, string]>)),
+    ],
+  })
 }
 
 export interface CombatViewCallbacks {
@@ -271,6 +302,8 @@ export class CombatView {
           this.refreshPlan()
         }),
       )
+      // 장전해 놓고 나서 "이게 뭐였더라" 가 제일 잦다 — 슬롯에서도 바로 볼 수 있어야 한다
+      this.bin.add(longPress(slot, () => showRoundInfo(r.special, s.specials[r.special ?? ''])))
     }
     this.updatePreview()
   }
@@ -325,12 +358,7 @@ export class CombatView {
     add(basic, 'div', 'ammo-stat', BASIC_DMG + ' · ' + BASIC_HEAT.toFixed(2))
     add(basic, 'div', 'ammo-count', '∞')
     this.bin.add(on(basic, 'click', () => this.push(basicRound())))
-    this.bin.add(
-      on(basic, 'contextmenu', (e) => {
-        e.preventDefault()
-        void popover({ title: '기본탄', lines: ['수량 무한. 자체 효과는 없고 부착물 수치만 얹힌다.'] })
-      }),
-    )
+    this.bin.add(longPress(basic, () => showRoundInfo(null)))
 
     // 보유 특수탄
     const ids = Object.keys(s.specials).filter((k) => (s.specials[k] ?? 0) > 0)
@@ -353,21 +381,7 @@ export class CombatView {
           this.push(makeRound(id))
         }),
       )
-      this.bin.add(
-        on(card, 'contextmenu', (e) => {
-          e.preventDefault()
-          void popover({
-            title: def.name,
-            accent: def.color,
-            lines: [def.text],
-            rows: [
-              ['데미지', String(def.dmg)],
-              ['온도', '+' + def.heat.toFixed(2)],
-              ['보유', String(s.specials[id] ?? 0) + '발'],
-            ],
-          })
-        }),
-      )
+      this.bin.add(longPress(card, () => showRoundInfo(id, s.specials[id] ?? 0)))
     }
   }
 
@@ -410,6 +424,32 @@ export class CombatView {
         on(box, 'click', () => {
           if (this.busy) return
           this.cb.onOpenRack(e.slot, e.railIndex)
+        }),
+      )
+      // 탭 = 교체, 꾹 = 설명. 랙이 v2 빌드의 전부이므로 여기서 효과를 못 읽으면
+      // 무엇을 끼고 있는지는 알아도 그게 무슨 뜻인지는 모른다.
+      const att = e.att
+      this.bin.add(
+        longPress(box, () => {
+          if (att === null) {
+            void popover({
+              title: kind,
+              lines: [
+                e.slot === 'rail'
+                  ? '비어 있다. 보조 레일은 그 자체로는 효과가 없고 광학을 하나 더 다는 자리다.'
+                  : '비어 있다. 탭하면 보관함의 부착물로 채울 수 있다.',
+              ],
+            })
+            return
+          }
+          void popover({
+            title: att.name,
+            lines: [att.text],
+            rows: [
+              ['부위', kind],
+              ['등급', RARITY_KO[att.rarity] ?? att.rarity],
+            ],
+          })
         }),
       )
     }

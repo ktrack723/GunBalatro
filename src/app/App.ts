@@ -80,6 +80,9 @@ const BASE_VIGNETTE = 0.42
 /** 전투 노드에서 고를 복도 종류 (core 에 NodeKind→CorridorKind 매핑이 없어 view 가 정한다) */
 const COMBAT_KINDS: readonly CorridorKind[] = ['corridor', 'stair', 'pipe', 'office', 'garage']
 
+/** '꾹 눌러 설명' 안내를 이미 띄웠는가 (세션 스코프) */
+let hintedLongPress = false
+
 /** 사운드 훅 (아직 소리는 없다. 첫 터치에서 resume 만 해 둔다) */
 export interface AudioHook {
   resume(): void
@@ -541,6 +544,12 @@ export class App {
       sc.gun.resetHeat(s.heat)
       // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)
       sc.gun.setMagazineCap(s.cap)
+    }
+
+    // 꾹 눌러 설명 보기는 눌러 보기 전에는 알 수 없다 — 세션당 한 번만 알려준다
+    if (!hintedLongPress) {
+      hintedLongPress = true
+      toast('탄과 부착물을 꾹 누르면 설명이 뜬다')
     }
 
     const outcome = await new Promise<'win' | 'lose'>((resolve) => {
