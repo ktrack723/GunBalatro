@@ -23,12 +23,23 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      # ★ 이 단계가 없으면 Pages 소스가 "Deploy from a branch" 로 남아,
+      #   deploy-pages 가 성공해도 실제로 서빙되는 건 리포 루트(빌드 전 소스)다.
+      #   루트 index.html 은 /src/main.ts 를 참조하므로 브라우저에서 흰 화면이 된다.
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
         env:
           GH_PAGES: '1'
+
+      # Jekyll 이 산출물을 건드리지 않게 한다 (_ 로 시작하는 경로 무시 방지)
+      - run: touch dist/.nojekyll
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

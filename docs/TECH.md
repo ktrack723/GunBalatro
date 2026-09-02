@@ -217,9 +217,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
+      # ★ 필수. 이 단계가 Pages 소스를 "GitHub Actions" 로 전환한다.
+      #   빠뜨리면 소스가 "Deploy from a branch" 로 남아, deploy-pages 가 성공해도
+      #   실제 서빙되는 건 리포 루트(빌드 전 소스)다 → 브라우저에서 흰 화면.
+      - uses: actions/configure-pages@v5
       - run: npm ci
       - run: npm run test        # 헤드리스 밸런스 시뮬 포함
       - run: npm run build
+        env: { GH_PAGES: '1' }
+      - run: touch dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
   deploy:
@@ -240,6 +246,14 @@ jobs:
 | 캐시 | Vite 해시 파일명. `index.html`만 `no-cache` |
 | COOP/COEP 헤더 불가 | SharedArrayBuffer / 멀티스레드 사용 불가 → 애초에 필요 없게 설계 |
 | 대용량 에셋 | 15MB 이내 유지. 리포 용량 문제 시 릴리스 에셋 + fetch도 가능 |
+
+> **실제로 밟은 함정**: 첫 배포에서 `configure-pages` 를 빠뜨려 Pages 소스가 브랜치 기반으로 남았다.
+> `deploy-pages` 는 **성공**했지만 사이트는 리포 루트를 서빙했고, 루트 `index.html` 은
+> 빌드 전 소스라 `/src/main.ts` 를 참조해 **흰 화면**이 됐다.
+> 증상 구분법: Actions 탭에 `pages build and deployment`(레거시 브랜치 빌더) 런이 보이면
+> 소스가 아직 브랜치다. 소스가 Actions 로 바뀌면 그 런은 더 이상 생기지 않는다.
+> 또한 **배포본을 실제 base 경로(`/GunBalatro/`)에 올려놓고 테스트해야 한다** —
+> `vite preview` 는 base `/` 로 돌아 이 문제를 잡지 못한다.
 
 ---
 
