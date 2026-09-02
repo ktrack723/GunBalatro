@@ -16,6 +16,7 @@ import type {
 } from './types'
 import { BASE_HEAT, RAIL_ACCEPTS } from './types'
 import { makeRng } from './rng'
+import { applyJam } from './data/enemies'
 import {
   computeCap,
   computeEnemySpeed,
@@ -143,6 +144,9 @@ export function swapAttachment(s: CombatState, id: string, railIndex?: number): 
 
   // 장비가 바뀌었으니 파생값을 다시 잡는다 (거리는 이미 진행 중이라 건드리지 않는다)
   s.attachments = orderedAttachments(l)
+  // 교란(JAMMING)은 재계산으로 풀리면 안 된다 — 부품 하나 갈아 끼우면 봉쇄가
+  // 사라지던 구멍을 여기서 막는다.
+  applyJam(s)
   s.cap = computeCap(l)
   s.fireCost = computeFireCost(l, s.enemy.speed)
   s.heatStartBase = BASE_HEAT + computeStartHeat(l)

@@ -16,13 +16,18 @@ import type {
 import { BASE_HEAT_CARRY, BASIC_DMG, BASIC_HEAT } from './types'
 import { SPECIAL_BY_ID } from './data/specials'
 
-/** 순회 순서: 총열 → 덮개 → 광학 → 스톡 → 탄창 → 레일(좌→우) */
+/**
+ * 순회 순서: 총열 → 덮개 → **광학 → 레일 광학** → 스톡 → 탄창.
+ *
+ * 레일이 맨 뒤에 있으면 같은 부착물을 하드포인트에 꽂았을 때와 레일에 꽂았을 때
+ * 한 탄창 피해가 최대 13.7% 달라진다 — 그 사이에 참회의 탄대의 `c.dmg = 0` 대입이
+ * 끼기 때문이다. 광학은 같은 부위이므로 반드시 붙여서 돈다.
+ */
 export function orderedAttachments(l: Loadout): Attachment[] {
   const out: Attachment[] = []
-  for (const a of [l.barrel, l.handguard, l.optic, l.stock, l.magazine]) {
-    if (a !== null) out.push(a)
-  }
+  for (const a of [l.barrel, l.handguard, l.optic]) if (a !== null) out.push(a)
   for (const r of l.rails) if (r !== null) out.push(r)
+  for (const a of [l.stock, l.magazine]) if (a !== null) out.push(a)
   return out
 }
 
@@ -136,8 +141,13 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
   const passive = s.enemy.passive
   if (passive?.modifyHeatGain !== undefined) heatGain = passive.modifyHeatGain(heatGain, ctx)
   if (s.heatDoublePending) heatGain *= 2
-  if (s.doubleNext && def === null) {
-    // 성탄의 "다음 탄 2배" 는 기본탄에는 데미지 2배로 작용한다
+  // 성탄 래치. STEP7 의 훅이 전부 끝난 뒤에 꺼야 한다 —
+  // 여기서 바로 끄면 훅을 가진 특수탄(amp() 를 쓰는 12종)이 2배를 못 받고,
+  // 안 끄면 성탄 자신의 onAfterShot 이 다음 발까지 끌고 간다.
+  const wasDouble = s.doubleNext
+  // **훅이 없는 탄에만** 데미지 2배를 준다. 훅이 있는 탄은 자기 amp() 로 이미 2배를
+  // 받으므로, 여기서 또 곱하면 STEP5 위에 다시 곱해져 4배가 된다.
+  if (wasDouble && (def === null || def.hooks === undefined)) {
     dmg *= 2
   }
 
@@ -164,7 +174,7 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
 
   // ---- STEP 7: 발사 후 -----------------------------------------------------
   const distBefore = s.distance
-  s.doubleNext = false
+  const speedBefore = s.enemy.speed
 
   for (const a of s.attachments) {
     ctx.self = a.id
@@ -177,6 +187,15 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
   if (passive?.onAfterShot !== undefined) {
     ctx.self = passive.id
     safe(() => passive.onAfterShot?.(ctx), passive.id)
+  }
+
+  // 성탄 래치 해제 — 이 발이 2배를 받았을 때만 끈다.
+  if (wasDouble) s.doubleNext = false
+
+  // 적 속도가 바뀌었으면(냉각탄 등) 사격 비용을 **부착물 보정까지 포함해** 다시 잡는다.
+  // 카드가 직접 fireCost 를 대입하면 간이 거리계·완충기 보정이 통째로 날아간다.
+  if (s.enemy.speed !== speedBefore) {
+    s.fireCost = computeFireCost(s.loadout, s.enemy.speed)
   }
 
   // 사격 이벤트는 **STEP 7 이 끝난 뒤**에 발행한다.

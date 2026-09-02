@@ -3,6 +3,7 @@
 // 패시브는 훅으로만 규칙을 왜곡한다 — 수치를 새로 만들지 않는다.
 
 import type {
+  Attachment,
   EnemyArchetype,
   EnemyArchetypeId,
   EnemyInstance,
@@ -83,26 +84,37 @@ export const ARCH_BY_ID: Record<EnemyArchetypeId, EnemyArchetype> = {
 // 패시브 (GDD.md §8.3) — 각 패시브는 정확히 하나의 축만 봉쇄한다.
 // ---------------------------------------------------------------------------
 
-/** 강직: 순서 축 봉쇄. index 는 0-based 이므로 2번째 탄 == index 1. */
+/**
+ * 강직: 순서 축 봉쇄. index 는 0-based 이므로 2번째 탄 == index 1.
+ * 데미지만 0 이면 2번 칸에 싼 예열탄을 끼워 넘길 수 있었다 — 온도도 함께 막아야
+ * '그 칸을 어떻게 쓸까' 가 진짜 문제가 된다. (유효HP배수 1.15 → 1.32)
+ */
 const RIGID: EnemyPassive = {
   id: 'rigid',
   name: '강직',
-  text: '탄창의 2번째 탄 데미지 0',
+  text: '탄창의 2번째 탄은 데미지도 온도도 얻지 못한다',
   modifyDamage: (d, c) => (c.index === 1 ? 0 : d),
+  modifyHeatGain: (g, c) => (c.index === 1 ? 0 : g),
 }
 
+/**
+ * 장갑: 데미지를 깎으면 '그냥 아프기만' 하다 — 재배열로 회복되는 폭이 +2.3% 뿐이었다.
+ * 온도를 깎으면 예열 계획 자체를 다시 짜야 한다 (회복 +12.8%, 배수 1.14 → 1.26).
+ */
 const PLATED: EnemyPassive = {
   id: 'plated',
   name: '장갑',
-  text: '매 사격의 첫 2발 데미지 50%',
-  modifyDamage: (d, c) => (c.index < 2 ? Math.round(d * 0.5) : d),
+  text: '매 사격의 첫 2발은 온도를 절반만 얻는다',
+  modifyHeatGain: (g, c) => (c.index < 2 ? g * 0.5 : g),
 }
 
+/** 최후 방벽: 마지막 한 칸만으로는 지분이 40% 뿐이라 배수 1.12 에 그쳤다 → 두 칸 */
 const BULWARK: EnemyPassive = {
   id: 'bulwark',
   name: '최후 방벽',
-  text: '탄창의 마지막 탄 데미지 50%',
-  modifyDamage: (d, c) => (c.isLast ? Math.round(d * 0.5) : d),
+  text: '탄창의 마지막 두 탄 데미지 50%',
+  modifyDamage: (d, c) =>
+    c.index >= c.s.magPlan.length - 2 ? Math.round(d * 0.5) : d,
 }
 
 const LUNGE: EnemyPassive = {
@@ -115,65 +127,94 @@ const LUNGE: EnemyPassive = {
   },
 }
 
+/** 냉혈: 유일한 곱셈 축을 직접 깎는다. 0.6 은 10종 중 최상위(배수 1.59)라 과했다 */
 const COLDBLOOD: EnemyPassive = {
   id: 'coldblood',
   name: '냉혈',
-  text: '온도 획득 40% 감소',
-  modifyHeatGain: (g) => g * 0.6,
+  text: '온도 획득 25% 감소',
+  modifyHeatGain: (g) => g * 0.75,
 }
 
+/**
+ * 재생: 사격당 고정 4% 는 어떤 빌드에도 똑같이 걸리는 순수 세금이었다(배수 1.20, 범위 1.08~1.28).
+ * **발당** 1.5% 로 바꾸면 대용량 탄창일수록 아프므로 탄창 선택과 맞물린다.
+ */
 const REGEN: EnemyPassive = {
   id: 'regen',
   name: '재생',
-  text: '사격 사이 최대 HP의 4% 회복',
+  text: '사격을 마칠 때 쏜 탄 1발마다 최대 HP의 1.5% 회복',
   onMagEnd: (c) => {
     const e = c.s.enemy
     if (e.hp <= 0) return
-    e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * 0.04))
+    const back = Math.round(e.maxHp * 0.015 * c.s.magFired.length)
+    e.hp = Math.min(e.maxHp, e.hp + back)
   },
 }
 
 /** 특수탄 축 봉쇄 — 특수탄 의존 빌드에만 아프다 */
+/** 봉인: 0.5 는 배수 1.40~1.61(최대 3.59)로 과했다. '특수탄을 안 쓴다' 는 대응이 없다 */
 const SEALED: EnemyPassive = {
   id: 'sealed',
   name: '봉인',
-  text: '특수탄 데미지 50%',
-  modifyDamage: (d, c) => (c.round.special !== null ? Math.round(d * 0.5) : d),
+  text: '특수탄 데미지 30% 감소',
+  modifyDamage: (d, c) => (c.round.special !== null ? Math.round(d * 0.7) : d),
 }
 
 /** 특수탄 재고 압박 — 장기전을 벌하고 속공을 강요한다 */
 const DEVOUR: EnemyPassive = {
   id: 'devour',
   name: '탐식',
-  text: '사격을 마칠 때마다 특수탄 1발이 소실된다',
+  text: '사격을 마칠 때마다 특수탄 3발이 소실된다',
   onMagEnd: (c) => {
     if (c.s.dryRun || c.s.enemy.hp <= 0) return
-    const ids = Object.keys(c.s.specials).filter((k) => (c.s.specials[k] ?? 0) > 0)
-    if (ids.length === 0) return
-    const id = ids[c.s.rng.int(ids.length)]
-    c.s.specials[id] = Math.max(0, (c.s.specials[id] ?? 0) - 1)
+    for (let i = 0; i < 3; i += 1) {
+      const ids = Object.keys(c.s.specials).filter((k) => (c.s.specials[k] ?? 0) > 0)
+      if (ids.length === 0) return
+      const id = ids[c.s.rng.int(ids.length)]
+      c.s.specials[id] = Math.max(0, (c.s.specials[id] ?? 0) - 1)
+    }
   },
 }
 
-/** 부착물 축 봉쇄 — 광학을 여러 개 겹친 빌드에만 아프다 */
+/**
+ * 부착물 축 봉쇄 — 광학에 투자한 빌드에만 아프다.
+ *
+ * 두 가지가 깨져 있었다:
+ *  ① '보조 레일에 단 광학' 만 껐는데 레일이 0칸인 플레이어에게는 아무 일도 안 일어났다
+ *     (16빌드 중 14개가 정확히 무효). 광학 부위 전체로 넓힌다.
+ *  ② attachments 배열을 직접 걸러냈는데, swapAttachment 가 orderedAttachments 로
+ *     통째로 다시 만들기 때문에 **광학이 아닌 아무 부품을 한 번 교체하는 것만으로**
+ *     봉쇄가 풀렸다 (실측 총피해 22% → 95% 복구). 플래그로 남기고 재계산 뒤 다시 적용한다.
+ */
 const JAMMING: EnemyPassive = {
   id: 'jamming',
   name: '교란',
-  text: '이번 전투 동안 보조 레일에 단 광학이 작동하지 않는다',
+  text: '이번 전투 동안 광학이 작동하지 않는다',
   onCombatStart: (c) => {
-    const railIds = new Set(c.s.loadout.rails.filter((r) => r !== null).map((r) => r!.id))
-    if (railIds.size === 0) return
-    c.s.attachments = c.s.attachments.filter((a) => !railIds.has(a.id))
+    c.s.flags['jammed'] = true
+    applyJam(c.s)
   },
 }
 
-/** 온도 상한 — 과열 빌드에만 아프다 */
+/** 교란 상태를 attachments 에 반영한다. swapAttachment 도 재계산 후 이걸 부른다. */
+export function applyJam(s: { flags: Record<string, boolean>; attachments: Attachment[] }): void {
+  if (s.flags['jammed'] !== true) return
+  s.attachments = s.attachments.filter((a) => a.slot !== 'optic')
+}
+
+/**
+ * 온도 상한 — 과열 빌드에만 아프다.
+ * '넘으면 사격 중단' 은 복권이었다: 중앙값 배수 1.09 인데 최대 10.21 (한 발 차이로
+ * 탄창이 통째로 날아간다). **상한형**으로 바꾸면 같은 축을 막으면서 분산이 사라진다
+ * (배수 1.15~1.33, 무효 빌드 16개 중 2개).
+ */
 const ENTROPY: EnemyPassive = {
   id: 'entropy',
   name: '열역학',
-  text: '온도가 26을 넘으면 그 사격이 즉시 종료된다',
-  onAfterShot: (c) => {
-    if (c.s.heat > 26) c.s.abortMag = true
+  text: '온도가 26을 넘지 않는다 — 초과분은 얻지 못한다',
+  modifyHeatGain: (g, c) => {
+    const room = 26 - c.s.heat
+    return room <= 0 ? 0 : Math.min(g, room)
   },
 }
 

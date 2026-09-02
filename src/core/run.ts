@@ -167,6 +167,13 @@ const THREAT_PAIRS: ReadonlyArray<readonly [Threat, Threat]> = [
 ]
 const ARCHES: EnemyArchetypeId[] = ['shambler', 'runner', 'bloat', 'horde', 'crawler']
 
+/** 광학을 하나라도 달고 있는가 (교란 패시브 게이팅) */
+function hasOptic(run: RunState): boolean {
+  const l = run.loadout
+  if (l.optic !== null) return true
+  return l.rails.some((x) => x !== null)
+}
+
 function rollRarity(r: Rng, threat: Threat): Rarity {
   return r.weighted(RARITIES, THREAT_RARITY_W[threat])
 }
@@ -179,10 +186,13 @@ export function rollDoors(run: RunState): DoorOption[] {
     return pair.map((threat): DoorOption => {
       const arch = r.pick(ARCHES)
       const wantPassive = threat === 3 || (threat === 2 && r.next() < 0.3)
+      // 교란은 광학이 하나도 없으면 아무 일도 일어나지 않는다 — 전투 시점 광학 0개
+      // 비율이 S1 87% / S2 56% 라, 초반 위험도3 문이 공짜가 되어 버린다.
+      const pool = hasOptic(run) ? PASSIVES : PASSIVES.filter((p) => p.id !== 'jamming')
       const passive = isBoss
         ? run.bossPassiveId
         : wantPassive
-          ? r.pick(PASSIVES).id
+          ? r.pick(pool).id
           : null
       return {
         threat,

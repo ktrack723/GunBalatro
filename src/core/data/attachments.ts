@@ -10,6 +10,7 @@
 //     R7 — 희귀 이상 등급의 온도 부착물은 조건부여야 한다.
 // ============================================================================
 import type { Attachment, CombatState, FireCtx, Rarity, Rng, SlotKind } from '../types'
+import { computeCap } from '../pipeline'
 
 function proc(c: FireCtx): void {
   c.triggered.push(c.self)
@@ -74,8 +75,8 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'barrel',
     rarity: 'uncommon',
     // 첫 '두' 탄. 첫 탄만이면 cap9 에서 1/9 만 맞아 커먼 중총열에 지배당한다.
-    text: '탄창의 첫 두 탄 DMG +95',
-    hooks: { onFire: (c) => { if (c.index <= 1) { c.dmg += 95; proc(c) } } },
+    text: '탄창의 첫 두 탄 DMG +75',
+    hooks: { onFire: (c) => { if (c.index <= 1) { c.dmg += 75; proc(c) } } },
   },
   {
     id: 'br_bayonet',
@@ -84,8 +85,9 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'uncommon',
     // 실측 42,587발 중 거리 ≤10 인 발사는 15.9%. 기대치 60×0.19=11.6 은
     // 커먼 연장 총열의 무조건 +14 보다 낮았다 — 조건부가 무조건보다 약하면 안 된다.
-    text: '거리 10m 이하면 모든 탄 DMG +120',
-    hooks: { onFire: (c) => { if (c.s.distance <= 10) { c.dmg += 120; proc(c) } } },
+    // 실측 거리 ≤10 발사는 8.8% 뿐 — +120 의 기대치는 무조건 발동 커먼보다 낮았다.
+    text: '거리 10m 이하면 모든 탄 DMG +200',
+    hooks: { onFire: (c) => { if (c.s.distance <= 10) { c.dmg += 200; proc(c) } } },
   },
   {
     id: 'br_catalyst',
@@ -101,11 +103,12 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'barrel',
     rarity: 'rare',
     // 비율 보정은 옵틱 3중첩과 만나면 되먹임이 된다 — 상한을 박는다.
-    text: '마지막 탄에 이번 탄창 누적 피해의 5% 추가 (최대 +180)',
+    text: '마지막 탄에 이번 탄창 누적 피해의 8% 추가 (최대 +400)',
     hooks: {
       onFire: (c) => {
         if (!c.isLast) return
-        const add = Math.min(180, Math.round(c.s.magDamage * 0.05))
+        // 상한 180 은 누적 3,600 부터 상시 구속돼 '마지막 탄 +180 고정' 이 됐다
+        const add = Math.min(400, Math.round(c.s.magDamage * 0.08))
         if (add <= 0) return
         c.dmg += add
         proc(c)
@@ -119,14 +122,14 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // 무상한 누적은 런 후반에 ×15 까지 갔다 (실측 특수탄 56발/런).
     // 덧셈 게임에 몰래 들어온 지수 성장이라 상한을 건다.
-    text: '모든 탄 DMG +30. 특수탄을 쏠 때마다 +4 누적 (최대 +120)',
+    text: '모든 탄 DMG +30. 특수탄을 쏠 때마다 +2 누적 (최대 +40)',
     hooks: {
       onFire: (c) => {
-        c.dmg += 30 + Math.min(120, getRunVar(c.s, c.self))
+        c.dmg += 30 + Math.min(40, getRunVar(c.s, c.self))
         proc(c)
       },
       onAfterShot: (c) => {
-        if (isSpecial(c)) addRunVar(c.s, c.self, 4)
+        if (isSpecial(c)) addRunVar(c.s, c.self, 2)
       },
     },
   },
@@ -135,7 +138,9 @@ export const ATTACHMENTS: Attachment[] = [
     name: '볼터의 원형',
     slot: 'barrel',
     rarity: 'relic',
-    text: '기본탄의 DMG 가 이번 탄창에서 쏜 특수탄 중 최고 DMG 와 같아진다',
+    // 총열은 순회 최선두라 대입값 위에 광학·개머리판 보너스가 다시 얹힌다
+    // (실측 AP 230 → 기본탄 350). 툴팁이 그 사실을 숨기고 있었다.
+    text: '기본탄의 기본 DMG 가 이번 탄창의 특수탄 최고 DMG 로 대체된다 (보너스는 그 위에 다시)',
     hooks: {
       // 툴팁대로 **탄창 스코프**다. vars 는 전투 내내 살아 있으므로 명시적으로 지운다.
       onMagStart: (c) => { c.s.vars[c.self] = 0 },
@@ -196,10 +201,10 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'handguard',
     rarity: 'uncommon',
     // 계수 1.1 은 탄창당 +11.0 로 레어(순교 +0.5)를 크게 넘었다 — 등급 역전.
-    text: '이미 쏜 탄 수 ×0.5 만큼 HEAT + (상한 +2.0)',
+    text: '이미 쏜 탄 수 ×0.7 만큼 HEAT + (상한 +2.8)',
     hooks: {
       onFire: (c) => {
-        const v = Math.min(c.index, 4) * 0.5
+        const v = Math.min(c.index, 4) * 0.7
         if (v <= 0) return
         c.heatGain += v
         proc(c)
@@ -221,10 +226,10 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'handguard',
     rarity: 'rare',
     // 무상한 누적은 34탄창 만에 +249%(H1)까지 갔다. 상한 +0.7.
-    text: '모든 탄 HEAT +0.5. 사격을 마칠 때마다 +0.05 누적 (최대 +0.7)',
+    text: '모든 탄 HEAT +0.5. 사격을 마칠 때마다 +0.1 누적 (최대 +1.3)',
     hooks: {
-      onFire: (c) => { c.heatGain += 0.5 + Math.min(0.7, getRunVar(c.s, c.self)); proc(c) },
-      onMagEnd: (c) => { addRunVar(c.s, c.self, 0.05) },
+      onFire: (c) => { c.heatGain += 0.5 + Math.min(1.3, getRunVar(c.s, c.self)); proc(c) },
+      onMagEnd: (c) => { addRunVar(c.s, c.self, 0.1) },
     },
   },
   {
@@ -242,6 +247,39 @@ export const ATTACHMENTS: Attachment[] = [
         c.s.heatDoublePending = true
         proc(c)
       },
+    },
+  },
+
+  {
+    id: 'hg_twoshot',
+    name: '두 발의 계율',
+    slot: 'handguard',
+    rarity: 'rare',
+    // UI 는 매 사격마다 'N/용량 발' 을 묻는데 답이 언제나 '용량까지' 였다 —
+    // magPlan.length 를 읽는 부착물이 카탈로그에 하나도 없었기 때문이다.
+    // ★ cap<=2 가드는 필수다. 없으면 탐식의 성궤(용량 2)에서 조건이 무조건 성립해
+    //   실측 처리량이 6.39배로 터진다.
+    text: '용량보다 적게, 정확히 2발만 장전하면 모든 탄 HEAT +11',
+    hooks: {
+      onFire: (c) => {
+        if (c.s.cap <= 2 || c.s.magPlan.length !== 2) return
+        c.heatGain += 11
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'hg_pyre',
+    name: '분신의 배기구',
+    slot: 'handguard',
+    rarity: 'uncommon',
+    // 거리는 이 게임의 목숨이자 행동 수인데, 그 자원을 **자발적으로 태워** 화력으로
+    // 바꾸는 카드가 한 장도 없었다 (참회의 사슬은 전투 시작 거리를 한 번 깎을 뿐이다).
+    // 하한 1m — 배기구가 스스로 플레이어를 죽이면 안 된다. 죽음은 사격 비용이 정한다.
+    text: '사격을 시작할 때 거리 3m 를 태운다 · 이번 사격의 모든 탄 HEAT +2.5',
+    hooks: {
+      onMagStart: (c) => { c.s.distance = Math.max(1, c.s.distance - 3) },
+      onFire: (c) => { c.heatGain += 2.5; proc(c) },
     },
   },
 
@@ -329,19 +367,20 @@ export const ATTACHMENTS: Attachment[] = [
     name: '고정 개머리판',
     slot: 'stock',
     rarity: 'common',
-    text: '전투 시작 거리 +6m',
-    mods: { startDist: 6 },
+    // +6 이면 간이 거리계가 10칸 중 10칸에서 우월해 동부위·동등급 지배가 생긴다.
+    text: '전투 시작 거리 +8m',
+    mods: { startDist: 8 },
   },
   {
     id: 'st_charm',
     name: '황동 부적',
     slot: 'stock',
     rarity: 'common',
-    text: '발사할 때마다 탄피 +4',
+    text: '발사할 때마다 탄피 +6',
     hooks: {
       onAfterShot: (c) => {
         if (c.s.dryRun) return
-        c.s.loadout.brass += 4
+        c.s.loadout.brass += 6
         proc(c)
       },
     },
@@ -392,10 +431,31 @@ export const ATTACHMENTS: Attachment[] = [
     // 거리(=사격 횟수)를 쓰는 유물이 되어 축이 맞는다.
     // 전투 시작 2발 + 사격마다 1발. 전투 시작분이 없으면 첫 탄창에 값이 0 이라
     // 유물을 집었는데 그 전투에서 아무 일도 안 일어난다.
-    text: '전투 시작 시 무작위 특수탄 2발 · 사격을 시작할 때마다 1발을 보급받는다',
+    // 전투 2발이면 황제+계약+성사 3광학 조합이 단일 탄창 11.5배(R3 12배)에 닿는다.
+    text: '전투 시작 시 무작위 특수탄 1발 · 사격을 시작할 때마다 1발을 보급받는다',
     hooks: {
-      onCombatStart: (c) => { supply(c.s, 2) },
+      onCombatStart: (c) => { supply(c.s, 1) },
       onMagStart: (c) => { supply(c.s, 1) },
+    },
+  },
+
+  {
+    id: 'st_glacier',
+    name: '빙하의 성해',
+    slot: 'stock',
+    rarity: 'relic',
+    // R6 확장 문언 — startHeat/heatCarry 를 건드리는 것은 탄창 부위와 유물만 허용한다.
+    // 이 유물은 그 특권을 **깎는 방향**으로 쓴다: 이월을 0 으로 만들어 "매 사격이 첫
+    // 사격" 이 되게 하고, 대가를 저온 보너스로 돌려준다. 저온 축의 유일한 유물이다.
+    // 급속 냉각기(−0.4)와 겹쳐도 computeHeatCarry 가 0 으로 클램프한다.
+    text: '온도가 이월되지 않는다 · 발사 전 온도 6 이하면 모든 탄 DMG +120',
+    mods: { heatCarry: -0.5 },
+    hooks: {
+      onFire: (c) => {
+        if (c.heatBefore > 6) return
+        c.dmg += 120
+        proc(c)
+      },
     },
   },
 
@@ -415,35 +475,35 @@ export const ATTACHMENTS: Attachment[] = [
     name: '드럼 8연발',
     slot: 'magazine',
     rarity: 'uncommon',
-    text: '용량 7. 온도 획득 −20%',
-    mag: { cap: 7, heatGainMul: 0.8 },
+    text: '용량 8. 온도 획득 −30%',
+    mag: { cap: 8, heatGainMul: 0.7 },
   },
   {
     id: 'mg_precision',
     name: '정밀 3연발',
     slot: 'magazine',
     rarity: 'uncommon',
-    text: '용량 3. 발사마다 HEAT +3.5 · 사격 거리 −2m',
+    text: '용량 3. 발사마다 HEAT +3.0 · 사격 거리 −2m',
     mag: { cap: 3 },
     mods: { fireCost: -2 },
-    hooks: { onFire: (c) => { c.heatGain += 3.5; proc(c) } },
+    hooks: { onFire: (c) => { c.heatGain += 3.0; proc(c) } },
   },
   {
     id: 'mg_greed',
     name: '탐식의 성궤',
     slot: 'magazine',
     rarity: 'rare',
-    text: '용량 2. 발사한 특수탄이 80% 확률로 소모되지 않는다',
-    mag: { cap: 2, notConsumedChance: 0.8 },
+    text: '용량 2. 발사한 특수탄이 70% 확률로 소모되지 않는다 (탄당 최대 2회 재발사)',
+    mag: { cap: 2, notConsumedChance: 0.7 },
   },
   {
     id: 'mg_coolant',
     name: '냉각 자켓',
     slot: 'magazine',
     rarity: 'rare',
-    text: '용량 6. 온도 이월 +25%p (총 75%)',
+    text: '용량 6. 온도 이월 +20%p (총 70%)',
     mag: { cap: 6 },
-    mods: { heatCarry: 0.25 },
+    mods: { heatCarry: 0.20 },
   },
   {
     id: 'mg_executioner',
@@ -452,9 +512,9 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // R6 특권(startHeat)을 쓰는 유일한 부위. +18 은 테르밋탄 1발(48 heat·shot)의
     // 37% 값어치라 특권이 무의미했다. +34 로 71% 까지 올린다.
-    text: '용량 1. 사격 시작 온도 +34 · 사격 거리 −3m',
+    text: '용량 1. 사격 시작 온도 +26 · 사격 거리 −3m',
     mag: { cap: 1 },
-    mods: { startHeat: 34, fireCost: -3 },
+    mods: { startHeat: 26, fireCost: -3 },
   },
   {
     id: 'mg_penitent',
@@ -481,6 +541,143 @@ export const ATTACHMENTS: Attachment[] = [
     text: '용량 12. 온도 획득 −30%',
     mag: { cap: 12, heatGainMul: 0.7 },
   },
+  {
+    id: 'mg_annex',
+    name: '증축 탄창',
+    slot: 'magazine',
+    rarity: 'rare',
+    // 탄창 9종이 전부 **고정 용량**이라 '용량' 은 장착 시점에 정해지고 끝나는 값이었다.
+    // 이 탄창은 전투 안에서 용량이 자라므로, 용량 조건부 카드(압축 가스관 index>=2,
+    // 연쇄 점화, 성수 앰플 isLast, 소염기 index<=1)의 성립률이 사격마다 바뀐다.
+    // cap 은 fire() 가 validatePlan 에서 먼저 읽으므로 반드시 **사격이 끝난 뒤** 올린다.
+    // 성장분을 vars 로 따로 들고 있어야 전투 중 부착물 교체(swapAttachment 가
+    // computeCap 으로 cap 을 다시 잡는다)에도 다음 magEnd 에서 복원된다.
+    text: '용량 5. 사격을 마칠 때마다 이번 전투 동안 용량 +1 (최대 10)',
+    mag: { cap: 5 },
+    hooks: {
+      onMagEnd: (c) => {
+        const g = Math.min(5, getVar(c.s, c.self) + 1)
+        c.s.vars[c.self] = g
+        c.s.cap = computeCap(c.s.loadout) + g
+      },
+    },
+  },
+
+  {
+    id: 'op_deferral',
+    name: '유예의 조준경',
+    slot: 'optic',
+    rarity: 'uncommon',
+    // 이 게임의 배열 규칙은 '예열 먼저, 큰 것 나중' 하나뿐이고 카탈로그에 반례가 없었다.
+    // 마지막 칸을 **나쁘게** 만드는 첫 카드다. 죽음의 성사(마지막 탄이 특수탄이면 HEAT +14)와
+    // 논리적으로 배타라, 광학 3칸에서 처음으로 '이 둘은 같이 못 쓴다' 는 쌍이 생긴다.
+    // '특수탄이 있을 때만' 을 반드시 건다 — 안 걸면 기본탄만인 탄창(실측 40.7%)에서
+    // 조건이 공짜로 성립해 그냥 무조건 +DMG 가 된다.
+    text: '특수탄을 넣고도 기본탄으로 끝내면 모든 탄 DMG +55',
+    hooks: {
+      onFire: (c) => {
+        const p = c.s.magPlan
+        const last = p[p.length - 1]
+        if (last === undefined || last.special !== null) return
+        if (!p.some((r) => r.special !== null)) return
+        c.dmg += 55
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'op_inquest',
+    name: '이단 감식경',
+    slot: 'optic',
+    rarity: 'uncommon',
+    // 갈림길은 문을 열기 전에 적의 패시브를 보여준다 (위험도3 100% / 2 30% / 1 0%).
+    // 그런데 enemy.passive 를 읽는 부착물·특수탄이 0종이라, 런에서 가장 큰 결정인
+    // '어느 문으로 갈까' 가 빌드와 아무 접점이 없었다. 이 카드가 그 접점이다.
+    text: '적이 패시브를 지녔으면 모든 탄 DMG +25',
+    hooks: {
+      onFire: (c) => {
+        if (c.s.enemy.passive === null) return
+        c.dmg += 25
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'op_lastrites',
+    name: '임종의 조준경',
+    slot: 'optic',
+    rarity: 'uncommon',
+    // 거리 조건 카드는 레이저 지시기(≥20m)와 총검 거치대(≤10m) 둘뿐이라, 거리는
+    // 곱해질 값만 바꾸고 **곱하는 값**을 건드린 적이 없었다. 거리를 처음으로 온도에 잇는다.
+    text: '거리 10m 이하면 모든 탄 HEAT +2.5',
+    hooks: {
+      onFire: (c) => {
+        if (c.s.distance > 10) return
+        c.heatGain += 2.5
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'op_poverty',
+    name: '청빈의 조준경',
+    slot: 'optic',
+    rarity: 'uncommon',
+    // 실측 탄창의 40.7% 가 기본탄만으로 채워지는데 그 상태를 보상하는 카드가
+    // 중(重)총열 하나뿐이었다. 진짜 값어치는 열화상·삼위일체·황제의 눈·죽음의 성사와
+    // **동시에 켜질 수 없다**는 것 — 광학 세 칸을 채울 때 처음으로 '어느 축을 버릴까'
+    // 라는 배제 결정이 생긴다.
+    text: '탄창에 특수탄이 하나도 없으면 모든 탄 HEAT +1.2',
+    hooks: {
+      onFire: (c) => {
+        if (specialsInMag(c) > 0) return
+        c.heatGain += 1.2
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'op_vigil',
+    name: '불침번의 렌즈',
+    slot: 'optic',
+    rarity: 'rare',
+    // 성장형 3종(폭발 볼트·순교의 화로·영혼 표식)은 전부 **런 스코프**라 전투 안에서는
+    // 상수다. 이 카드만 **전투 스코프**로 자라므로 "거리를 사서 사격 횟수를 늘린다" 는
+    // 개머리판 축이 처음으로 피해로 환전된다. 상한 5회 = 유한자원(거리)이 곧 상한이다.
+    text: '이번 전투에서 마친 사격 1회마다 모든 탄 DMG +6 (최대 +30)',
+    hooks: {
+      onFire: (c) => {
+        const n = Math.min(5, c.s.magsFired)
+        if (n <= 0) return
+        c.dmg += n * 6
+        proc(c)
+      },
+    },
+  },
+  {
+    id: 'op_frostvault',
+    name: '서리 성궤',
+    slot: 'optic',
+    rarity: 'rare',
+    // 저온 축의 구조적 결함은 "보상이 DMG 라서, 조건이 성립하는 순간이 곱수가 가장
+    // 작은 순간" 이라는 것이었다. 보상을 **온도**로 주되 마지막 탄 한 발에 몰아준다 —
+    // 그래서 앞쪽 탄들의 저온 조건(급속 냉각기 ≤3.5, 한랭 총열 6−h)을 깨지 않는다.
+    // 이 카드는 이 게임의 기본 휴리스틱(예열 먼저, 큰 것 나중)을 뒤집는다.
+    text: '온도 6 이하에서 쏜 탄 1발마다 마지막 탄 HEAT +6.0',
+    hooks: {
+      onMagStart: (c) => { c.s.vars[c.self] = 0 },
+      onFire: (c) => {
+        if (!c.isLast) return
+        const n = getVar(c.s, c.self)
+        if (n <= 0) return
+        c.heatGain += n * 6.0
+        proc(c)
+      },
+      onAfterShot: (c) => {
+        if (c.heatBefore <= 6) c.s.vars[c.self] = getVar(c.s, c.self) + 1
+      },
+    },
+  },
 
   // =========================================================================
   // 광학 — 조건·콤보 축 (구 '보조 레일' 부착물).
@@ -500,8 +697,9 @@ export const ATTACHMENTS: Attachment[] = [
     name: '삼위일체 각인',
     slot: 'optic',
     rarity: 'uncommon',
-    text: '탄창에 특수탄 3발 이상이면 모든 탄 HEAT +2.2',
-    hooks: { onFire: (c) => { if (specialsInMag(c) >= 3) { c.heatGain += 2.2; proc(c) } } },
+    // 조건이 열화상 조준경(≥2)의 진부분집합이라 페이로드가 낮으면 완전히 지배당한다.
+    text: '탄창에 특수탄 3발 이상이면 모든 탄 HEAT +3.0',
+    hooks: { onFire: (c) => { if (specialsInMag(c) >= 3) { c.heatGain += 3.0; proc(c) } } },
   },
   {
     id: 'op_pact',
@@ -509,8 +707,8 @@ export const ATTACHMENTS: Attachment[] = [
     slot: 'optic',
     rarity: 'uncommon',
     // 임계 15(성립률 25.7%)에 +130 은 언커먼 밴드의 2배였다. 12(32.8%)/+70 으로.
-    text: '발사 전 온도 12 초과면 DMG +70',
-    hooks: { onFire: (c) => { if (c.heatBefore > 12) { c.dmg += 70; proc(c) } } },
+    text: '발사 전 온도 12 초과면 DMG +55',
+    hooks: { onFire: (c) => { if (c.heatBefore > 12) { c.dmg += 55; proc(c) } } },
   },
   {
     // 순수 평탄 DMG 이므로 축으로 보면 총열이다.
@@ -549,12 +747,14 @@ export const ATTACHMENTS: Attachment[] = [
     name: '불안정 노심',
     slot: 'magazine',
     rarity: 'rare',
-    text: '용량 4. 발사마다 HEAT +4.5 · 온도 이월 −25%p · 온도 22 초과 시 사격 즉시 종료',
+    // 퓨즈 22 는 적 패시브 '열역학'(26)보다 낮아 그 패시브를 항상 무효로 만들었고,
+    // 정상상태에서 3번째 발에 걸려 '용량 4' 가 영구히 3발이 됐다.
+    text: '용량 4. 발사마다 HEAT +4.5 · 온도 이월 −25%p · 온도 30 초과 시 사격 즉시 종료',
     mag: { cap: 4 },
     mods: { heatCarry: -0.25 },
     hooks: {
       onFire: (c) => { c.heatGain += 4.5; proc(c) },
-      onAfterShot: (c) => { if (c.s.heat > 22) c.s.abortMag = true },
+      onAfterShot: (c) => { if (c.s.heat > 30) c.s.abortMag = true },
     },
   },
   {
@@ -564,9 +764,10 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'uncommon',
     // 임계 4 는 자기 이월 감소 덕에 5/5 전부 발동해 '조건'이 아니었다.
     // 3.5 로 낮추면 정상상태에서 4/5 만 켜져 배치 결정이 살아난다.
-    text: '온도 이월 −40%p. 발사 전 온도 3.5 이하면 DMG +45',
+    // 저온 축(한랭 총열·냉동탄·초탄)의 유일한 진입점이다 — 여기가 죽으면 축 전체가 죽는다.
+    text: '온도 이월 −40%p. 발사 전 온도 3.5 이하면 DMG +65',
     mods: { heatCarry: -0.4 },
-    hooks: { onFire: (c) => { if (c.heatBefore <= 3.5) { c.dmg += 45; proc(c) } } },
+    hooks: { onFire: (c) => { if (c.heatBefore <= 3.5) { c.dmg += 65; proc(c) } } },
   },
   {
     id: 'br_frostbite',
@@ -575,12 +776,12 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'rare',
     // 문턱을 12 → 6 으로. 12 면 이월 정상상태(약 7)에서도 늘 켜져 있어
     // "저온일 때만 강하다" 는 정체성이 성립하지 않았다.
-    text: '발사 전 온도가 낮을수록 강하다 — DMG + (6 − 온도) × 26',
+    text: '발사 전 온도가 낮을수록 강하다 — DMG + (6 − 온도) × 70',
     hooks: {
       onFire: (c) => {
         const gap = 6 - c.heatBefore
         if (gap <= 0) return
-        c.dmg += Math.round(gap * 26)
+        c.dmg += Math.round(gap * 70)
         proc(c)
       },
     },

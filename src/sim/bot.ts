@@ -86,6 +86,13 @@ function candidates(s: CombatState, skill: BotSkill): Round[][] {
   // ① 전부 기본탄 — 특수탄을 아끼는 선택
   out.push(fillBasics([], cap))
 
+  // ①-b **부분 장전.** 봇은 지금까지 언제나 cap 을 꽉 채웠다 — 즉 UI 가 매번 묻는
+  //   'N/용량 발' 이라는 축을 한 번도 평가한 적이 없다. 그래서 장전 수를 읽는
+  //   부착물(두 발의 계율)은 어떤 수치를 줘도 채택률이 0 이었다.
+  for (const n of [2, 3]) {
+    if (n < cap) out.push(fillBasics([], n))
+  }
+
   if (sp.length > 0) {
     // ② 휴리스틱: 예열용(온도 높은) 앞, 피니셔(데미지 높은) 뒤
     const byHeat = heuristicOrder(sp).slice(0, cap)
@@ -99,6 +106,18 @@ function candidates(s: CombatState, skill: BotSkill): Round[][] {
     // ④ 데미지 최고 1발만 마지막에
     const best = sp.slice().sort((a, b) => dmgOf(b) - dmgOf(a))[0]
     out.push([...fillBasics([], cap - 1), best])
+
+    // ⑤ **고DMG 특수탄을 1번 자리에.** heuristicOrder 는 철갑탄을 늘 마지막에 두는데,
+    //   그 자리가 '볼터의 원형'(기본탄이 특수탄 최고 DMG 를 물려받는다)의 값을 정확히
+    //   0 으로 만든다. 이 후보가 없으면 그 유물은 영원히 0점으로 측정된다.
+    out.push([best, ...fillBasics([], cap - 1)])
+    if (cap >= 3 && sp.length >= 2) {
+      const second = sp.slice().sort((a, b) => dmgOf(b) - dmgOf(a))[1]
+      out.push([best, ...fillBasics([], cap - 2), second])
+    }
+
+    // ⑥ 부분 장전 + 특수탄 (두 발의 계율 × 특수탄)
+    if (cap > 2) out.push([basicRound(), best])
 
     if (skill === 'optimal') {
       const base = out[1]

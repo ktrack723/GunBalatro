@@ -102,17 +102,20 @@ describe('특수탄', () => {
     expect(s.distance).toBe(before + 4 - s.fireCost)
   })
 
-  it('점착탄은 이후 탄의 데미지를 올린다', () => {
+  // 아래 두 상수는 specials.ts 의 값과 **의도적으로 묶여 있다.**
+  // 밸런스 조정으로 숫자가 바뀌면 여기서 터져야 한다 — 조용히 지나가면
+  // '기능은 살아 있는데 값이 사라진' 회귀를 못 잡는다.
+  it('점착탄은 이후 탄의 데미지를 올린다 (+45)', () => {
     const l = loadout([], { sp_adhesive: 1 })
     const { shots } = shoot(l, [makeRound('sp_adhesive'), basicRound()])
-    expect(shots[1].dmg).toBe(BASIC_DMG + 30)
+    expect(shots[1].dmg).toBe(BASIC_DMG + 45)
   })
 
-  it('표식탄은 적을 취약하게 만든다', () => {
+  it('표식탄은 적을 취약하게 만든다 (+35%)', () => {
     const l = loadout([], { sp_marker: 1 })
     const s = startCombat(l, dummy(), makeRng(3))
     fire(s, [makeRound('sp_marker'), basicRound()])
-    expect(s.enemy.vuln).toBeCloseTo(0.25, 6)
+    expect(s.enemy.vuln).toBeCloseTo(0.35, 6)
   })
 
   it('특수탄은 소모되고 기본탄은 무한하다', () => {

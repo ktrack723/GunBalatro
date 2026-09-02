@@ -23,7 +23,7 @@ export const SPECIALS: SpecialDef[] = [
     rarity: 'common',
     dmg: 6,
     heat: 5,
-    price: 14,
+    price: 18,
     color: '#ff7a2a',
   },
   {
@@ -39,7 +39,10 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_shock',
     name: '충격탄',
-    text: '적을 4m 뒤로 밀어낸다',
+    // 상한 없이 탄창마다 한 발이면 전투 길이가 무한히 늘어난다 (실측 비대체 9→141탄창).
+    // 4m 는 그대로 두고 **전투당 누계 12m** 로 막는다 — 6m 로 올리면 유효 발수가
+    // 3→2 로 줄어 '몇 발을 언제 쓰나' 라는 산수 결정의 해상도가 반토막 난다.
+    text: '적을 4m 뒤로 밀어낸다 (전투당 누계 12m)',
     rarity: 'common',
     dmg: 20,
     heat: 0.4,
@@ -47,8 +50,12 @@ export const SPECIALS: SpecialDef[] = [
     color: '#7fc7e8',
     hooks: {
       onAfterShot(c) {
-        const m = amp(c, 4)
+        const used = c.s.vars['knockTotal'] ?? 0
+        const room = 12 - used
+        if (room <= 0) return
+        const m = Math.min(room, amp(c, 4))
         c.s.distance += m
+        c.s.vars['knockTotal'] = used + m
         proc(c)
       },
     },
@@ -58,7 +65,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_adhesive',
     name: '점착탄',
-    text: '이번 탄창의 남은 모든 탄 DMG +30',
+    text: '이번 탄창의 남은 모든 탄 DMG +45',
     rarity: 'uncommon',
     dmg: 14,
     heat: 0.4,
@@ -66,7 +73,7 @@ export const SPECIALS: SpecialDef[] = [
     color: '#a8d24a',
     hooks: {
       onAfterShot(c) {
-        c.s.magDmgBonus += amp(c, 30)
+        c.s.magDmgBonus += amp(c, 45)
         proc(c)
       },
     },
@@ -78,13 +85,13 @@ export const SPECIALS: SpecialDef[] = [
     rarity: 'uncommon',
     dmg: 8,
     heat: 12,
-    price: 34,
+    price: 48,
     color: '#ffb03a',
   },
   {
     id: 'sp_marker',
     name: '표식탄',
-    text: '이번 전투 동안 적이 받는 피해 +25%',
+    text: '이번 전투 동안 적이 받는 피해 +35%',
     rarity: 'uncommon',
     dmg: 16,
     heat: 0.4,
@@ -92,7 +99,7 @@ export const SPECIALS: SpecialDef[] = [
     color: '#e05fa0',
     hooks: {
       onAfterShot(c) {
-        c.s.enemy.vuln += amp(c, 0.25)
+        c.s.enemy.vuln += amp(c, 0.35)
         proc(c)
       },
     },
@@ -100,17 +107,24 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_chill',
     name: '냉각탄',
-    text: '적 접근 속도 −2 (이번 전투)',
+    text: '적 접근 속도 −2 (이번 전투, 누계 −2 까지)',
     rarity: 'uncommon',
     dmg: 18,
     heat: 0.3,
     price: 32,
     color: '#8fd8ff',
     hooks: {
+      // fireCost 를 여기서 덮어쓰면 부착물 보정(간이 거리계·완충기 등)이 통째로
+      // 날아간다 (실측 −36.3%). 재계산은 파이프라인 STEP7 이 맡는다.
+      // 누계 상한이 없으면 2발로 전투 길이가 2.5배가 된다 — 충격탄과 같은 처방.
       onAfterShot(c) {
+        const used = c.s.vars['chillTotal'] ?? 0
+        const room = 2 - used
+        if (room <= 0) return
+        const cut = Math.min(room, amp(c, 2))
         const e = c.s.enemy
-        e.speed = Math.max(2, e.speed - amp(c, 2))
-        c.s.fireCost = Math.max(1, e.speed)
+        e.speed = Math.max(2, e.speed - cut)
+        c.s.vars['chillTotal'] = used + cut
         proc(c)
       },
     },
@@ -156,7 +170,7 @@ export const SPECIALS: SpecialDef[] = [
     rarity: 'rare',
     dmg: 150,
     heat: 0.2,
-    price: 65,
+    price: 52,
     color: '#d0d6dd',
     hooks: {
       onFire(c) {
@@ -171,7 +185,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_cryo',
     name: '냉동탄',
-    text: '발사 전 온도가 낮을수록 강하다 (DMG +(15−온도)×26)',
+    text: '발사 전 온도가 낮을수록 강하다 (DMG +(18−온도)×30)',
     rarity: 'uncommon',
     dmg: 18,
     heat: 0.15,
@@ -179,9 +193,9 @@ export const SPECIALS: SpecialDef[] = [
     color: '#7fe3ff',
     hooks: {
       onFire(c) {
-        const gap = 15 - c.heatBefore
+        const gap = 18 - c.heatBefore
         if (gap <= 0) return
-        c.dmg += Math.round(amp(c, gap * 26))
+        c.dmg += Math.round(amp(c, gap * 30))
         proc(c)
       },
     },
@@ -189,16 +203,18 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_firststrike',
     name: '초탄',
-    text: '발사 전 온도 3.5 이하면 DMG +300',
+    // 임계 3.5 는 이월 정상상태에서 첫 칸에서만 성립했다. 6.0 이면 전체 탄창의
+    // 55% (첫 탄창)에서 성립하고 최선 칸이 1번이 아니라 2번이 되어 배치 결정이 생긴다.
+    text: '발사 전 온도 6.0 이하면 DMG +240',
     rarity: 'rare',
     dmg: 40,
     heat: 0.1,
-    price: 58,
+    price: 44,
     color: '#cfe6ff',
     hooks: {
       onFire(c) {
-        if (c.heatBefore > 3.5) return
-        c.dmg += amp(c, 300)
+        if (c.heatBefore > 6.0) return
+        c.dmg += amp(c, 240)
         proc(c)
       },
     },
@@ -206,7 +222,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_purge',
     name: '방열탄',
-    text: '온도를 절반으로 낮추고 그만큼 DMG 로 바꾼다',
+    text: '온도를 절반 버리고 버린 만큼을 DMG 로 (뜨거울수록 강하다)',
     rarity: 'uncommon',
     dmg: 10,
     heat: 0,
@@ -226,7 +242,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_singularity',
     name: '특이점탄',
-    text: '온도가 이번 탄창의 발사 수 ×6 만큼 오른다',
+    text: '온도가 이번 탄창의 발사 수 ×10 만큼 오른다',
     rarity: 'relic',
     dmg: 20,
     heat: 0,
@@ -234,7 +250,7 @@ export const SPECIALS: SpecialDef[] = [
     color: '#c88bff',
     hooks: {
       onFire(c) {
-        c.heatGain += amp(c, c.s.magFired.length * 6)
+        c.heatGain += amp(c, c.s.magFired.length * 10)
         proc(c)
       },
     },
@@ -242,15 +258,22 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_judgment',
     name: '심판탄',
-    text: '지금까지 이번 탄창이 입힌 피해의 40%를 추가',
+    // 누적 피해를 dmg 에 얹으면 STEP5 가 그것을 온도로 **다시** 곱한다 —
+    // 그래서 섹터가 오를수록 기여가 단조 증가했다(계수를 아무리 낮춰도 남는다).
+    // 적 HP 에서 직접 빼는 방식으로 바꾸면 섹터와 무관한 고정 비율이 된다.
+    text: '지금까지 이번 탄창이 입힌 피해의 80%를 적에게 직접 가한다',
     rarity: 'relic',
     dmg: 30,
     heat: 0.5,
     price: 120,
     color: '#ffd76a',
     hooks: {
-      onFire(c) {
-        c.dmg += Math.round(amp(c, c.s.magDamage * 0.4))
+      onAfterShot(c) {
+        const extra = Math.round(amp(c, c.s.magDamage * 0.8))
+        if (extra <= 0) return
+        c.s.enemy.hp -= extra
+        c.s.magDamage += extra
+        c.s.totalDamage += extra
         proc(c)
       },
     },

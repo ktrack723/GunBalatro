@@ -7,7 +7,7 @@ import type { Attachment, FireEvent, RewardItem, RunState, Threat } from '../cor
 import { SPECIAL_BY_ID } from '../core/data/specials'
 import { ATT_BY_ID } from '../core/data/attachments'
 import { makeRng } from '../core/rng'
-import { startCombat } from '../core/combat'
+import { fire, startCombat } from '../core/combat'
 import { computeFireCost } from '../core/pipeline'
 import { combatBrass, skipRewardBrass } from '../core/economy'
 import {
@@ -27,7 +27,7 @@ import {
 import type { ArmoryEntry } from '../core/run'
 import { makeEnemy } from '../core/data/enemies'
 import { pickDerelict } from '../core/data/events'
-import { estimateMagDamage, playCombat } from './bot'
+import { chooseAction, estimateMagDamage, playCombat } from './bot'
 import type { BotSkill } from './bot'
 
 const SAFETY = 1.35
@@ -177,29 +177,97 @@ function restore(run: RunState, s: Snapshot): void {
   run.attachmentsTaken = s.taken
 }
 
-function probeEnemy(run: RunState, threat: Threat = 1) {
+/**
+ * 화력 프로브용 적.
+ *   예전에는 배회자(시작 30m) · 패시브 없음 하나뿐이라, 거리 조건 카드(총검 거치대·
+ *   임종의 조준경·분신의 배기구)와 패시브 조건 카드(이단 감식경)가 구조적으로
+ *   0점이었다 — 조건이 켜지는 상황을 오라클이 한 번도 본 적이 없다.
+ *   이제 원거리(배회자)와 근접(기어다니는 것, 시작 18m)을 함께 재고,
+ *   근접 쪽에는 패시브를 붙여 '문 뒤에 패시브가 있다' 는 상황도 포함시킨다.
+ */
+const PROBE_CASES: ReadonlyArray<{ archetypeId: 'shambler' | 'crawler'; passiveId: string | null }> = [
+  { archetypeId: 'shambler', passiveId: null },
+  { archetypeId: 'crawler', passiveId: 'plated' },
+]
+
+function probeEnemy(run: RunState, threat: Threat = 1, caseIndex = 0) {
+  const c = PROBE_CASES[caseIndex % PROBE_CASES.length]!
   return makeEnemy({
-    archetypeId: 'shambler',
-    passiveId: null,
+    archetypeId: c.archetypeId,
+    passiveId: c.passiveId,
     sector: Math.max(1, Math.min(8, run.sector)),
     nodeMul: 1.63,
     threat,
   })
 }
 
-/** 처리량 = 탄창당 피해 × 실제로 쓸 수 있는 사격 횟수 (필요 이상은 가치 0) */
-export function firepower(run: RunState): number {
-  const probe = probeEnemy(run)
-  const s = startCombat(run.loadout, probe, makeRng(0x5eed + run.sector), {
+/**
+ * 처리량 = 여러 탄창을 실제로 이어 쏴 본 총 피해.
+ *
+ * 예전에는 `1탄창 피해 × 사용 가능 행동 수` 로 추정했는데, 그 공식은 **성장형에
+ * 구조적으로 불리하다** — 온도 이월, 전투 중 자라는 값(불침번의 렌즈·증축 탄창),
+ * 사격을 마칠 때 걸리는 효과(탄띠 걸이)가 전부 2탄창째부터 나타나기 때문이다.
+ * 이제 실제로 최대 4탄창까지 굴려 본다.
+ *
+ * 잔여 특수탄과 탄피도 화력으로 환산한다. 안 하면 '소모를 아낀다'(병참 렌즈)와
+ * '탄피를 번다'(황동 부적)가 정확히 0점이라 실측 채택률이 1% 미만이었다.
+ */
+interface Probe {
+  /** 탄창 1장당 평균 피해 (특수탄 재고·탄피 환산 포함) */
+  perMag: number
+  /** 이 적을 상대로 쓸 수 있는 사격 횟수 */
+  actions: number
+  maxHp: number
+}
+
+function probeOnce(run: RunState, caseIndex: number): Probe {
+  const probe = probeEnemy(run, 1, caseIndex)
+  const s = startCombat(run.loadout, { ...probe, maxHp: 1e12, hp: 1e12 }, makeRng(0x5eed + run.sector), {
     startDistDelta: 0,
     heatStartDelta: 0,
     runVars: { ...run.attVars },
     attachmentsTaken: run.attachmentsTaken,
   })
-  const perMag = estimateMagDamage(s, 'greedy')
+  const brassBefore = run.loadout.brass
+  const specialsBefore = countSpecials(s.specials)
   const actions = Math.max(1, Math.floor(s.distance / Math.max(1, s.fireCost)))
-  const need = Math.ceil(probe.maxHp / Math.max(1, perMag))
-  return perMag * Math.min(actions, need + 1)
+  const mags = Math.min(4, actions)
+  let total = 0
+  for (let i = 0; i < mags; i += 1) {
+    if (s.distance <= 0) break
+    const act = chooseAction(s, 'greedy')
+    const before = s.totalDamage
+    fire(s, act.plan)
+    total += s.totalDamage - before
+  }
+  // 소모하지 않은 특수탄과 번 탄피를 같은 단위로 환산한다
+  const raw = total / Math.max(1, mags)
+  const specialsLeft = countSpecials(s.specials) - specialsBefore
+  const brassGain = run.loadout.brass - brassBefore
+  run.loadout.brass = brassBefore
+  const perMag = raw + (specialsLeft * raw * 0.10 + brassGain * raw * 0.004) / Math.max(1, mags)
+  return { perMag: Math.max(1, perMag), actions, maxHp: probe.maxHp }
+}
+
+function countSpecials(m: Record<string, number>): number {
+  let n = 0
+  for (const v of Object.values(m)) n += v
+  return n
+}
+
+/**
+ * 처리량은 **적 HP 와 같은 단위**여야 한다 — chooseDoor 가 이 값을 HP 와 직접
+ * 비교하기 때문이다. 그래서 필요 이상의 탄창은 값이 0 이다(need+1 상한).
+ * 이 상한을 빼면 문 선택률이 94.5% 로 치솟는다 (실측).
+ */
+export function firepower(run: RunState): number {
+  let sum = 0
+  for (let i = 0; i < PROBE_CASES.length; i += 1) {
+    const p = probeOnce(run, i)
+    const need = Math.ceil(p.maxHp / p.perMag)
+    sum += p.perMag * Math.min(p.actions, need + 1)
+  }
+  return sum / PROBE_CASES.length
 }
 
 // ---------------------------------------------------------------------------
