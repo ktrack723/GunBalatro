@@ -226,7 +226,10 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
       if (freeFirst && !usedFreeFirst) {
         usedFreeFirst = true
         consumed = false
-      } else if (keepChance > 0 && !s.dryRun && refire < MAX_REFIRE && s.rng.next() < keepChance) {
+      // dryRun 에서도 재발사를 굴린다. cloneState 가 독립 RNG 스트림을 쥐어 주므로
+      // 실제 난수 상태를 소비하지 않는다. 안 굴리면 미리보기가 탐식의 성궤를
+      // 통째로 못 읽어서 플레이어도 봇도 이 탄창의 가치를 볼 수 없다.
+      } else if (keepChance > 0 && refire < MAX_REFIRE && s.rng.next() < keepChance) {
         consumed = false
       }
       if (consumed) {

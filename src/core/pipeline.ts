@@ -55,7 +55,9 @@ export function computeEnemySpeed(l: Loadout, base: number): number {
 }
 
 export function computeFireCost(l: Loadout, speed: number): number {
-  return Math.max(1, speed + sumMods(l, 'fireCost'))
+  // 하한 2. 거리 감소를 세 개 겹치면 1 까지 내려가 배회자 상대로 30회를 쏠 수 있었다 —
+  // "거리 = 남은 목숨" 이라는 전제가 통째로 무의미해진다.
+  return Math.max(2, speed + sumMods(l, 'fireCost'))
 }
 
 export function computeStartHeat(l: Loadout): number {
@@ -65,7 +67,8 @@ export function computeStartHeat(l: Loadout): number {
 /** 사격 사이 온도 이월 비율 (0~1) */
 export function computeHeatCarry(l: Loadout): number {
   const v = BASE_HEAT_CARRY + sumMods(l, 'heatCarry')
-  return v < 0 ? 0 : v > 1 ? 1 : v
+  // 상한 0.9 — 이월 100% 면 온도가 영원히 식지 않아 "식힌다" 는 규칙 자체가 사라진다.
+  return v < 0 ? 0 : v > 0.9 ? 0.9 : v
 }
 
 export function railSlotsOf(l: Loadout): number {

@@ -12,7 +12,7 @@ import { newRun } from '../core/run'
 
 const K_RUN = 'gb.run'
 const K_META = 'gb.meta'
-const SCHEMA = 2
+const SCHEMA = 3
 
 function ls(): Storage | null {
   try {
