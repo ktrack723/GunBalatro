@@ -188,7 +188,20 @@ export class GameRenderer {
     const d = Math.min(Math.max(dt, 0), 0.05)
     this.scene.update(d)
     this.renderer.setRenderTarget(this.rt)
+    // 1패스: 월드. 총은 layer 1 로 빼 두었으므로 여기서는 그려지지 않는다.
+    this.scene.camera.layers.set(0)
     this.renderer.render(this.scene.root, this.scene.camera) // autoClear 가 RT 를 지운다
+
+    // 2패스: 뷰모델(총). 깊이를 지우고 나서 그린다 —
+    //   총은 카메라에 붙어 있어 월드 지오메트리와 깊이가 겹치므로,
+    //   한 패스로 그리면 복도 벽·소품을 뚫고 들어간다(FPS 의 고전적 문제).
+    //   깊이 버퍼를 비운 뒤 총만 다시 그리면 언제나 맨 앞에 온전히 보인다.
+    this.renderer.autoClear = false
+    this.renderer.clearDepth()
+    this.scene.camera.layers.set(1)
+    this.renderer.render(this.scene.root, this.scene.camera)
+    this.renderer.autoClear = true
+    this.scene.camera.layers.enableAll()
     this.lastCalls = this.renderer.info.render.calls
     this.lastTris = this.renderer.info.render.triangles
     this.scene.fx.post.render(this.renderer, this.rt.texture)

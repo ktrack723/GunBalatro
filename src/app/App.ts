@@ -69,10 +69,10 @@ import { makeViewRng, viewSeedOf, type ViewRng } from '../view3d/postShader'
 // ---------------------------------------------------------------------------
 
 /** 이동 구간 길이 (PRESENTATION §5) */
-const TRAVEL_MIN = 8
-const TRAVEL_MAX = 15
+const TRAVEL_MIN = 3.5
+const TRAVEL_MAX = 6
 /** 문을 열고 들어가는 짧은 구간 */
-const DOOR_TRAVEL = 3.6
+const DOOR_TRAVEL = 2.2
 /** 포스트 셰이더 비네트 기본값 (PostPass 생성자와 같은 값 — '어둠이 예산이다') */
 const BASE_VIGNETTE = 0.42
 /** 전투 노드에서 고를 복도 종류 (core 에 NodeKind→CorridorKind 매핑이 없어 view 가 정한다) */
@@ -379,14 +379,16 @@ export class App {
 
     if (sc === null || secs <= 0.05) {
       if (sc !== null) {
-        sc.startTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), 0.35, hint)
+        sc.continueTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), 0.35, hint)
         sc.rail.skip()
       }
       return
     }
 
     sc.setViewportInsets(0, 0) // 이동 중에는 화면 전체가 복도다
-    sc.startTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
+    // leg 1 = 문을 지나 다음 복도로. 카메라를 원점으로 되돌리지 않고 이어 붙인다.
+    if (leg === 1) sc.continueTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
+    else sc.startTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
     this.mountTravelOverlay(leg === 1 ? '문 안쪽으로' : '이동 중')
     await this.waitFrames(() => sc.rail.finished, secs * 4 + 8)
     this.unmountTravelOverlay()

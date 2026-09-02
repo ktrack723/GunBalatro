@@ -225,13 +225,26 @@ export class CorridorStreamer {
         break
       }
       case 'stair': {
-        for (let i = 0; i < 8; i++) {
-          const z = H - i * 0.5 - 0.25
-          g.push(bx(HW * 1.7, 0.16, 0.5, 0, 0.08 + i * 0.17, z, 0x45443f, 1.2))
+        // 계단은 **통로를 가로막지 않는다**. 카메라는 평지를 직진하므로,
+        // 진행선 위에 계단을 놓으면 카메라와 총이 그대로 뚫고 지나간다.
+        // 옆으로 난 계단참(위층으로 올라가는 길)으로 그려 지나쳐 보게 한다.
+        // 모든 구간에 계단이 있으면 복도가 계단으로 도배된다 — 일부 구간에만 둔다
+        if (variant % 3 !== 0) break
+        const side = variant % 2 === 0 ? 1 : -1
+        const wallX = side * (HW - 0.06)
+        for (let i = 0; i < 7; i++) {
+          // x 는 벽 쪽으로만, z 는 한 칸 안쪽에 모아 둔다
+          const step = 0.42
+          g.push(
+            bx(0.95, 0.14, step, wallX - side * 0.5, 0.1 + i * 0.19, H - 1.2 - i * step, 0x45443f, 1.2),
+          )
         }
-        g.push(cy(0.045, SEG_LEN, 6, -HW + 0.25, 1.15, 0, 0x6b6255, Math.PI / 2))
-        g.push(bx(0.12, 1.2, 0.12, -HW + 0.25, 0.6, -H + 0.4, 0x53504a, 1))
-        g.push(bx(0.12, 1.2, 0.12, -HW + 0.25, 1.2, H - 0.4, 0x53504a, 1))
+        // 계단참 난간
+        g.push(cy(0.05, 2.6, 6, wallX - side * 0.95, 1.15, H - 2.4, 0x6b6255, 0.42, 0))
+        g.push(bx(0.1, 1.1, 0.1, wallX - side * 0.95, 0.55, H - 1.2, 0x53504a, 1))
+        g.push(bx(0.1, 1.1, 0.1, wallX - side * 0.95, 1.15, H - 3.4, 0x53504a, 1))
+        // 위층으로 뚫린 어두운 개구부 (계단이 어디로 가는지 읽히게)
+        g.push(bx(1.5, 0.02, 2.2, wallX - side * 0.6, CH - 0.01, H - 2.3, 0x07080a, 1))
         break
       }
       case 'office': {
@@ -398,6 +411,20 @@ export class CorridorStreamer {
 
   hideDoors(): void {
     this.doorGroup.visible = false
+  }
+
+  /**
+   * 복도 전체를 z 방향으로 옮긴다 (트레드밀).
+   * 카메라를 원점으로 되돌리는 대신 복도를 카메라 앞으로 옮기면
+   * 구간이 바뀌어도 화면이 끊기지 않는다.
+   */
+  setOriginZ(z: number): void {
+    this.group.position.z = z
+    this.doorGroup.position.z = z
+  }
+
+  get originZ(): number {
+    return this.group.position.z
   }
 
   get doorZ(): number {

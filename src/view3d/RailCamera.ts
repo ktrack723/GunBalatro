@@ -46,6 +46,33 @@ export class RailCamera {
     return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5)
   }
 
+  /**
+   * 이어달리기용 경로 — 현재 위치에서 시작해 앞으로 뻗는다.
+   * 원점으로 되돌리지 않으므로 구간 전환에 컷이 없다.
+   */
+  resetFrom(seed: number, x0: number, z0: number): void {
+    const rng = makeViewRng(seed ^ 0x7a11)
+    const pts: THREE.Vector3[] = []
+    const n = 6
+    for (let i = 0; i <= n; i++) {
+      const t = i / n
+      const edge = Math.sin(t * Math.PI)
+      pts.push(
+        new THREE.Vector3(
+          x0 * (1 - t) + rng.range(-0.34, 0.34) * edge,
+          EYE + rng.range(-0.03, 0.03) * edge,
+          z0 - t * CORRIDOR_LENGTH,
+        ),
+      )
+    }
+    this.curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5)
+    this.p = 0
+    this.running = false
+    this.done = false
+    this.speedMul = 1
+    this.skipRate = 0
+  }
+
   /** 경로 재생성 (다음 구간). start() 전에 호출 */
   reset(seed = 1): void {
     this.curve = this.makeCurve(seed)

@@ -70,6 +70,14 @@ export class GameScene {
     // --- 리그 ---
     this.fx = new Fx(this.root)
     this.gun = new GunRig(this.fx)
+    // 총은 뷰모델 레이어(1)에 둔다. Renderer 가 깊이를 지우고 따로 그려
+    // 복도 지오메트리를 뚫고 들어가는 것을 막는다.
+    this.gun.object.traverse((o) => o.layers.set(1))
+    // 조명은 두 레이어 모두를 비춰야 한다 — 그러지 않으면 뷰모델 패스에서
+    // 총이 빛을 못 받아 검은 실루엣이 된다.
+    this.flashlight.layers.enableAll()
+    this.flashlight.target.layers.enableAll()
+    this.ambient.layers.enableAll()
     this.camera.add(this.gun.object)
 
     this.enemy = new EnemyRig()
@@ -102,11 +110,29 @@ export class GameScene {
     return this.mode
   }
 
-  /** 이동 구간 시작 — 복도를 새 시드로 조립하고 레일을 태운다 */
+  /** 이동 구간 시작 — 복도를 새 시드로 조립하고 레일을 태운다 (첫 진입) */
   startTravel(seed: number, kind: CorridorKind, seconds: number, hint: string | null = null): void {
     this.corridor.setHint(hint)
     this.corridor.rebuild(seed, kind)
+    this.corridor.setOriginZ(0)
+    this.camera.position.set(0, 1.62, 0)
     this.rail.reset(seed)
+    this.rail.start(seconds)
+    this.setMode('travel')
+  }
+
+  /**
+   * 이동 구간 **이어달리기** — 카메라를 원점으로 되돌리지 않는다.
+   * 복도를 카메라 앞으로 옮기고(트레드밀) 레일을 현재 위치에서 다시 깔아
+   * 문을 지나 다음 복도로 들어가는 동안 화면이 끊기지 않게 한다.
+   */
+  continueTravel(seed: number, kind: CorridorKind, seconds: number, hint: string | null = null): void {
+    const x0 = this.camera.position.x
+    const z0 = this.camera.position.z
+    this.corridor.setHint(hint)
+    this.corridor.rebuild(seed, kind)
+    this.corridor.setOriginZ(z0)
+    this.rail.resetFrom(seed, x0, z0)
     this.rail.start(seconds)
     this.setMode('travel')
   }
@@ -230,6 +256,8 @@ export class GameScene {
     this.flashlight.target.position.copy(this._lt)
 
     this.gun.update(d)
+    // 동적으로 붙은 자식(스파크 등)도 뷰모델 레이어에 유지한다
+    this.gun.object.traverse((o) => { if (o.layers.mask !== 2) o.layers.set(1) })
     this.enemy.update(d)
 
     // ※ Fx 는 반드시 마지막. 셰이크/반동을 확정된 카메라 자세 위에 가산한다.
