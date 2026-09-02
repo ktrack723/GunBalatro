@@ -156,11 +156,35 @@ export function renderTelemetry(tel: Telemetry, runs: number): string {
         .map((k) => `${k}장:${hist[k]}`)
         .join('  '),
   )
-  L.push(`   사격 종료 시 온도 평균 ${avg(tel.heatAtMagEnd).toFixed(2)} (이 값의 50%가 다음 사격으로 이월된다)`)
-  const wf = tel.winDistFrac
+  L.push(`   사격 종료 시 온도 평균 ${avg(tel.heatAtMagEnd).toFixed(2)}`)
+
+  L.push('')
+  L.push('▣ 페이싱 — 편향 없는 지표')
+  line()
+  const mn = tel.magsNeeded
+  const bucket = [0, 0, 0, 0, 0] // <1, 1-2, 2-3, 3-4, 4+
+  for (const v of mn) bucket[Math.min(4, Math.floor(v))] += 1
+  L.push(`   전투 시작 시 필요 탄창 수 (HP / 1탄창 예상피해) 평균 ${avg(mn).toFixed(2)}`)
   L.push(
-    `   승리 시 남은 거리 비율 평균 ${(avg(wf) * 100).toFixed(0)}%` +
-      `  (0% 에 가까울수록 아슬아슬한 전투)`,
+    `      1장 미만 ${bucket[0]}  ·  1~2장 ${bucket[1]}  ·  2~3장 ${bucket[2]}` +
+      `  ·  3~4장 ${bucket[3]}  ·  4장+ ${bucket[4]}`,
   )
+  L.push(`   전투 시작 시 가능한 사격 횟수 평균 ${avg(tel.actionsAvailable).toFixed(2)}`)
+  L.push(
+    `   여유 배수 = 사격횟수 / 필요탄창 = ${(avg(tel.actionsAvailable) / Math.max(0.01, avg(mn))).toFixed(2)}` +
+      `  (1 에 가까울수록 아슬아슬, 3 이상이면 거리 자원이 남아돈다)`,
+  )
+  L.push('')
+  L.push(
+    `   승리 시 남은 거리 비율 평균 ${(avg(tel.winDistFrac) * 100).toFixed(0)}%` +
+      `  ※ 이긴 판만 세므로 생존자 편향이 있다`,
+  )
+  const dh = tel.deathHpFrac
+  L.push(
+    `   패배 ${dh.length}회 · 그때 적에게 남아 있던 HP 평균 ${(avg(dh) * 100).toFixed(0)}%` +
+      `  (20% 이하면 아슬아슬한 패배, 50% 이상이면 애초에 무리한 문)`,
+  )
+  const near = dh.filter((v) => v <= 0.2).length
+  L.push(`      20% 이하로 아깝게 진 비율 ${dh.length === 0 ? 0 : Math.round((near / dh.length) * 100)}%`)
   return L.join('\n')
 }

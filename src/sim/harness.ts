@@ -87,10 +87,24 @@ export interface Telemetry {
   magsPerCombat: number[]
   heatAtMagEnd: number[]
   winDistFrac: number[]
+  /** 패배 시 적에게 남아 있던 HP 비율 — 0 에 가까울수록 아슬아슬한 패배 */
+  deathHpFrac: number[]
+  /**
+   * 전투 시작 시점의 HP / 1탄창 예상피해.
+   * 승패와 무관하게 측정되므로 **편향이 없는 페이싱 지표**다.
+   * (승리 시 남은 거리 같은 값은 이긴 판만 세므로 생존자 편향이 있다.)
+   */
+  magsNeeded: number[]
+  /** 전투 시작 시 쓸 수 있던 사격 횟수 */
+  actionsAvailable: number[]
 }
 
 export function emptyTelemetry(): Telemetry {
-  return { trigger: {}, specialShots: {}, equipped: {}, magsPerCombat: [], heatAtMagEnd: [], winDistFrac: [] }
+  return {
+    trigger: {}, specialShots: {}, equipped: {},
+    magsPerCombat: [], heatAtMagEnd: [], winDistFrac: [],
+    deathHpFrac: [], magsNeeded: [], actionsAvailable: [],
+  }
 }
 
 export interface RunResult {
@@ -347,6 +361,9 @@ export function simulateRun(
       const s = startCombat(run.loadout, staged, rng, mods)
       if (tel !== undefined) {
         for (const a of s.attachments) tel.equipped[a.id] = (tel.equipped[a.id] ?? 0) + 1
+        const perMag = Math.max(1, estimateMagDamage(s, skill))
+        tel.magsNeeded.push(s.enemy.maxHp / perMag)
+        tel.actionsAvailable.push(Math.floor(s.distance / Math.max(1, s.fireCost)))
       }
       trace?.push({
         k: 'enemy',
@@ -424,6 +441,7 @@ export function simulateRun(
           hpLeft: s.enemy.hp,
           hpFrac: s.enemy.hp / Math.max(1, s.enemy.maxHp),
         })
+        tel?.deathHpFrac.push(s.enemy.hp / Math.max(1, s.enemy.maxHp))
         run.status = 'dead'
         break
       }
