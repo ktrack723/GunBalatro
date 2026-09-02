@@ -72,6 +72,7 @@ export class GameScene {
     this.flashlight.target.position.set(0, -0.02, -6)
     this.camera.add(this.flashlight)
     this.camera.add(this.flashlight.target)
+    this.applyFlashlightMode('combat')
 
     // --- 리그 ---
     this.fx = new Fx(this.root)
@@ -116,14 +117,45 @@ export class GameScene {
   }
 
   // -------------------------------------------------------------------------
+  /**
+   * 손전등 모드.
+   *   적을 **검게** 만들었으므로 이제 손전등이 곧 정보 채널이다 — 빛이 닿는 만큼만 보인다.
+   *   그런데 이동용으로 튜닝된 손전등(감쇠 1.55·사거리 30)은 20m 밖에 광량이
+   *   거의 0 이라 전투 거리에서 적이 아예 안 보인다.
+   *   전투에서는 "빛을 적에게 겨눈다"가 실제 행동이므로, 그때만 원뿔을 좁히고
+   *   감쇠를 낮춰 **멀리 뻗는 빔**으로 바꾼다. 복도 이동은 넓고 짧은 원래 값을 쓴다.
+   */
+  private applyFlashlightMode(mode: ViewMode): void {
+    const f = this.flashlight
+    if (mode === 'combat') {
+      f.intensity = 62
+      f.distance = 60
+      f.decay = 1.12
+      f.angle = THREE.MathUtils.degToRad(35)
+      f.penumbra = 0.86
+    } else {
+      f.intensity = 34
+      f.distance = 30
+      f.decay = 1.55
+      f.angle = THREE.MathUtils.degToRad(38)
+      f.penumbra = 0.72
+    }
+  }
+
   setMode(mode: ViewMode): void {
     this.mode = mode
+    this.applyFlashlightMode(mode)
     if (mode === 'combat') {
       this.enemy.setVisible(true)
       this.gun.setLowered(false)
       this.corridor.hideDoors()
       this.camera.position.set(0, EYE, 0.25)
       this.camera.rotation.set(0, 0, 0)
+      // 이동 구간은 트레드밀이라 복도 그룹이 카메라를 따라 계속 −z 로 밀려간다
+      // (continueTravel 이 매 구간 originZ 를 갱신한다). 전투는 카메라를 원점으로
+      // 되돌리므로 복도도 같이 되돌리지 않으면 **전투가 허공에서 벌어진다** —
+      // 실제로 벽도 바닥도 없는 검은 화면이 나왔다.
+      this.corridor.setOriginZ(0)
     } else {
       this.enemy.setVisible(false)
       this.gun.setLowered(true)
@@ -292,11 +324,24 @@ export class GameScene {
     }
 
     // 손전등이 걸음/호흡에 맞춰 흔들린다 (카메라 로컬)
-    this._lt.set(
-      Math.sin(this.t * (this.mode === 'travel' ? 2.1 : 0.7)) * 0.55,
-      -0.02 + Math.sin(this.t * 1.3) * 0.25,
-      -6,
-    )
+    if (this.mode === 'combat') {
+      // 전투에서는 **적을 겨눈다**. 적이 검은색이므로 빔이 닿는 것 자체가 정보다.
+      // 고정 타깃(-6m)이면 20m 밖의 적은 원뿔 밖으로 나가 아무것도 안 보인다.
+      const ez = this.enemy.bodyZ - this.camera.position.z
+      const ey = 1.05 - this.camera.position.y
+      const wob = Math.abs(ez) * 0.02
+      this._lt.set(
+        Math.sin(this.t * 0.7) * wob,
+        ey + Math.sin(this.t * 1.3) * wob * 0.5,
+        ez,
+      )
+    } else {
+      this._lt.set(
+        Math.sin(this.t * 2.1) * 0.55,
+        -0.02 + Math.sin(this.t * 1.3) * 0.25,
+        -6,
+      )
+    }
     this.flashlight.target.position.copy(this._lt)
 
     this.gun.update(d)

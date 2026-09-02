@@ -132,25 +132,28 @@ async function playShot(
   const shake = d.shakeIntensity()
   const color = parseInt(colorOf(ev.round).slice(1), 16)
 
+  // 발동한 부착물을 먼저 랙에서 번쩍인다 (원인 → 결과 순서)
   for (const id of ev.triggered) d.view.flashRack(id)
   if (ev.triggered.length > 0) sfx('proc', 1, 60)
-  sfxShot(ev.heatAfter)
 
+  // ── 발사 순간 ────────────────────────────────────────────────────────────
+  //   총구 화염 · 화면 번쩍 · 반동 · 총성은 **전부 같은 프레임**이다.
+  //   예전에는 번쩍/반동/총성이 t=0, 총구 화염이 t=20ms 였다 — 20ms 는 작아 보여도
+  //   "총이 발사되기 전에 화면이 번쩍인다"로 또렷이 읽힌다. 원인보다 결과가 먼저
+  //   보이면 타격감이 통째로 무너진다.
+  sfxShot(ev.heatAfter)
   if (has3d(d.scene)) {
+    const muzzle = d.scene.gun.muzzleWorld
+    d.scene.fx.muzzleFlash(muzzle)
+    d.scene.fx.tracer(muzzle, d.scene.enemy.targetWorld, color)
     d.scene.gun.kick(0.6 + Math.min(1, ev.heatAfter / 30))
     d.scene.fx.screenFlash(0.88 * flash, dur(40, sp))
     d.scene.fx.aberration(1 * flash, dur(90, sp))
+    d.scene.fx.shake((0.35 + ev.heatAfter * 0.02) * shake, dur(220, sp))
   }
   d.haptic('heavy')
 
-  await wait(20, sp)
-  if (has3d(d.scene)) {
-    d.scene.fx.muzzleFlash(d.scene.gun.muzzleWorld)
-    d.scene.fx.tracer(d.scene.gun.muzzleWorld, d.scene.enemy.targetWorld, color)
-    d.scene.fx.shake((0.35 + ev.heatAfter * 0.02) * shake, dur(220, sp))
-  }
-
-  await wait(100, sp)
+  await wait(120, sp)
   if (has3d(d.scene)) {
     sfx('hit', 0.95 + Math.random() * 0.1, 0)
     d.scene.enemy.hitFlash()
@@ -210,15 +213,19 @@ export async function playFireSequence(
 ): Promise<void> {
   const sp = d.speed()
   d.view.setBusy(true)
+  /** 화면에 지금 떠 있는 온도 — 사격 종료 냉각 연출의 출발점 */
+  let shownHeat = s.heatStartBase
   try {
     for (const ev of events) {
       switch (ev.t) {
         case 'magStart':
           await playLoadSequence(ev.plan, d)
           d.view.setHeat(ev.heat)
+          shownHeat = ev.heat
           break
         case 'shot':
           await playShot(ev, s, d)
+          shownHeat = ev.heatAfter
           break
         case 'notConsumed':
           d.view.showProc('미소모 — ' + label(ev.round))
@@ -235,11 +242,32 @@ export async function playFireSequence(
           d.view.showProc(ev.note)
           await wait(120, sp)
           break
-        case 'magEnd':
+        // 사격이 끝나면 **총열이 식는다.**
+        //   온도는 이제 전투 내내 이어지는 자원이라, 이월분(기본 50%)이 얼마인지
+        //   눈으로 보여야 다음 탄창 계획이 선다. 숫자가 스르륵 내려가고
+        //   총의 발열색도 같이 꺼진다 — 이 한 장면이 이월 규칙을 통째로 가르친다.
+        case 'magEnd': {
           sfx('boltBack')
           if (has3d(d.scene)) d.scene.gun.boltBack()
-          await wait(260, sp)
+          const from = shownHeat
+          const to = ev.heatAfter
+          if (to < from - 0.05) {
+            d.view.showProc('냉각 ' + from.toFixed(1) + ' → ' + to.toFixed(1))
+            await tween(
+              dur(600, sp),
+              (t) => {
+                const h = from + (to - from) * t
+                d.view.setHeat(h, false)
+                if (has3d(d.scene)) d.scene.gun.setHeat(h)
+              },
+              easeOut,
+            )
+            shownHeat = to
+          } else {
+            await wait(260, sp)
+          }
           break
+        }
         case 'advance':
           d.view.setDistance(ev.distanceAfter, s.enemy.startDist, s.fireCost)
           if (has3d(d.scene)) d.scene.enemy.setDistance(ev.distanceAfter, s.enemy.startDist, true)

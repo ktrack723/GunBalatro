@@ -49,7 +49,7 @@
   --h-heat: 52px;   /* 발라트로급 큰 숫자 */
   --h-mag: 78px;
   --h-ammo: 96px;
-  --h-rack: 58px;
+  --h-rack: 84px;   /* 부위·이름·등급을 전부 글자로 적는다 */
   --h-act: 60px;
 
   --radius: 6px;
@@ -559,11 +559,12 @@ html, body {
 }
 .rack-row::-webkit-scrollbar { display: none; }
 .rack-slot {
-  flex: 1 1 0; min-width: 52px;
+  flex: 1 1 0; min-width: 76px;
   border-radius: 5px; border: 1px solid var(--line);
-  background: #0e1115; padding: 3px 4px;
+  border-top-width: 3px;
+  background: #0e1115; padding: 4px 5px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 1px; overflow: hidden;
+  gap: 2px; overflow: hidden;
   transition: transform .1s, border-color .14s, box-shadow .14s;
 }
 .rack-slot:active { transform: scale(.95); }
@@ -572,14 +573,24 @@ html, body {
   border-color: var(--brass);
   box-shadow: 0 0 14px rgba(200,164,77,.55) inset, 0 0 10px rgba(200,164,77,.3);
 }
-.rack-kind { font-size: 8px; color: var(--text-faint); letter-spacing: .04em; }
-.rack-name {
-  font-size: 10px; font-weight: 700; color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+.rack-kind {
+  font-size: 10.5px; color: var(--text-dim); letter-spacing: .08em;
+  white-space: nowrap;
 }
-.rack-slot.r-uncommon .rack-name { color: #6fb0e0; }
-.rack-slot.r-rare .rack-name { color: #bb85e8; }
-.rack-slot.r-relic .rack-name { color: var(--r-relic); }
+.rack-name {
+  font-size: 12.5px; font-weight: 800; color: var(--text);
+  line-height: 1.14; text-align: center; word-break: keep-all;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; max-width: 100%;
+}
+.rack-rar { font-size: 9.5px; color: var(--text-faint); letter-spacing: .06em; }
+.rack-slot.r-common     { border-top-color: #4b545e; }
+.rack-slot.r-uncommon   { border-top-color: #6fb0e0; }
+.rack-slot.r-rare       { border-top-color: #bb85e8; }
+.rack-slot.r-relic      { border-top-color: var(--r-relic); }
+.rack-slot.r-uncommon .rack-name, .rack-slot.r-uncommon .rack-rar { color: #6fb0e0; }
+.rack-slot.r-rare .rack-name,     .rack-slot.r-rare .rack-rar     { color: #bb85e8; }
+.rack-slot.r-relic .rack-name,    .rack-slot.r-relic .rack-rar    { color: var(--r-relic); }
 
 /* --- 데미지 팝업: 발라트로급 --- */
 .dmg-chip { font-size: 40px; }
@@ -601,7 +612,7 @@ html, body {
 .swap-hint { font-size: 11px; color: var(--text-faint); }
 
 @media (max-height: 700px) {
-  :root { --h-ammo: 84px; --h-rack: 52px; --h-heat: 46px; --h-mag: 70px; }
+  :root { --h-ammo: 84px; --h-rack: 78px; --h-heat: 46px; --h-mag: 70px; }
   .heat-num { font-size: 28px; }
   .dmg-total { font-size: 52px; }
 }

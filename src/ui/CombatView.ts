@@ -15,6 +15,14 @@ import { add, Bin, clamp, clear, el, fmtInt, on, orderMark, setClass } from './d
 import { popover } from './popover'
 import { sfx } from '../audio/Sfx'
 
+/** 등급을 글자로 — 색만으로 구분하면 색각 이상에서 정보가 통째로 사라진다 */
+export const RARITY_KO: Record<string, string> = {
+  common: '흔함',
+  uncommon: '비범',
+  rare: '희귀',
+  relic: '유물',
+}
+
 const HEAT_TIERS = [
   { at: 0, color: '#8d949c', name: '냉각' },
   { at: 3, color: '#e0682a', name: '가열' },
@@ -220,7 +228,8 @@ export class CombatView {
     this.carryLabel.style.color = pctVal >= 65 ? 'var(--inc)' : pctVal <= 35 ? '#7fe3ff' : 'var(--text-faint)'
   }
 
-  setHeat(heat: number): void {
+  /** bump=false 는 연속 보간용 (냉각 연출) — 매 프레임 튀는 애니메이션을 끈다 */
+  setHeat(heat: number, bump = true): void {
     const tierOf = (h: number): number => (h >= 30 ? 4 : h >= 16 ? 3 : h >= 8 ? 2 : h >= 3 ? 1 : 0)
     if (tierOf(heat) > tierOf(this.lastHeat)) sfx('heatUp')
     this.lastHeat = heat
@@ -230,6 +239,7 @@ export class CombatView {
     this.heatNum.style.textShadow = heat >= 8 ? '0 0 18px ' + c + '99' : 'none'
     this.heatFill.style.width = (heatFrac(heat) * 100).toFixed(1) + '%'
     this.heatFill.style.background = 'linear-gradient(90deg,#5a2a10,' + c + ')'
+    if (!bump) return
     this.heatNum.classList.add('bump')
     window.setTimeout(() => this.heatNum.classList.remove('bump'), 130)
   }
@@ -386,8 +396,14 @@ export class CombatView {
     for (const e of entries) {
       const box = add(this.rackRow, 'div', 'rack-slot')
       box.dataset['att'] = e.att?.id ?? ''
-      add(box, 'div', 'rack-kind', SLOT_LABEL[e.slot])
+      // 부위·이름·등급을 전부 **글자로** 적는다. 아이콘이나 색만으로는
+      // "지금 내 총이 무엇인가"가 읽히지 않는다 — 이 줄이 v2 빌드의 전부다.
+      const kind = e.railIndex === undefined
+        ? SLOT_LABEL[e.slot]
+        : SLOT_LABEL[e.slot] + ' ' + (e.railIndex + 1)
+      add(box, 'div', 'rack-kind', kind)
       add(box, 'div', 'rack-name', e.att?.name ?? '비어 있음')
+      add(box, 'div', 'rack-rar', e.att === null ? '장착 없음' : RARITY_KO[e.att.rarity])
       if (e.att === null) box.classList.add('empty')
       else box.classList.add('r-' + e.att.rarity)
       this.bin.add(

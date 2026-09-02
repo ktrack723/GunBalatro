@@ -539,6 +539,8 @@ export class App {
       sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id)
       sc.enemy.setDistance(s.distance, enemy.startDist, false)
       sc.gun.resetHeat(s.heat)
+      // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)
+      sc.gun.setMagazineCap(s.cap)
     }
 
     const outcome = await new Promise<'win' | 'lose'>((resolve) => {
@@ -589,6 +591,7 @@ export class App {
     if (changed) {
       view.render(s)
       this.syncInsets()
+      this.scene?.gun.setMagazineCap(s.cap)
       toast('부착물을 교체했다')
     }
   }

@@ -333,7 +333,7 @@ export type FireEvent =
   | { t: 'notConsumed'; index: number; round: Round }
   | { t: 'debuff'; note: string }
   | { t: 'enemyDead'; overkill: number }
-  | { t: 'magEnd'; heatCarried: number; totalDamage: number }
+  | { t: 'magEnd'; heatCarried: number; heatAfter: number; totalDamage: number }
   | { t: 'advance'; meters: number; distanceAfter: number }
   | { t: 'playerDead' }
 

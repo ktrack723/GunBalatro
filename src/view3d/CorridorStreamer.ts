@@ -73,6 +73,174 @@ function cy(
   return paint(g, hex)
 }
 
+/** 덩어리 (살·알집·고치). 구를 눌러 유기적인 형태를 만든다 */
+function sp(
+  r: number, sx: number, sy: number, sz: number,
+  x: number, y: number, z: number,
+  hex: number,
+): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(r, 7, 5)
+  g.scale(sx, sy, sz)
+  g.translate(x, y, z)
+  return paint(g, hex)
+}
+
+/** 두 점을 잇는 가는 기둥 (힘줄·철근·거미줄 가닥) */
+function strut(
+  x0: number, y0: number, z0: number,
+  x1: number, y1: number, z1: number,
+  r: number, hex: number, seg = 4,
+): THREE.BufferGeometry {
+  const dx = x1 - x0
+  const dy = y1 - y0
+  const dz = z1 - z0
+  const len = Math.hypot(dx, dy, dz) || 0.001
+  const g = new THREE.CylinderGeometry(r, r, len, seg, 1, false)
+  const q = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(dx, dy, dz).normalize(),
+  )
+  g.applyQuaternion(q)
+  g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)
+  return paint(g, hex)
+}
+
+// --- 동선 보호 ---------------------------------------------------------------
+/**
+ * 카메라는 복도 중앙을 ±0.36m 안에서 흔들리며 직진한다 (RailCamera).
+ * 그 띠 안에 서 있는 기물은 **플레이어가 뚫고 지나간다** — 실기에서 책상과 차량이
+ * 그렇게 통과됐다. 그래서 바닥(2cm)·천장(2.0m 위) 외의 기물은 이 반경 밖에만 놓는다.
+ */
+const KEEP = 0.86
+/** 통행 가능한 머리 높이 — 매달린 것은 이 위에만 둔다 */
+const HEAD = 2.05
+
+/** 좌우 중 한쪽, 통로 밖의 x. half 는 기물의 반폭(그만큼 더 밀어낸다) */
+function sideX(rng: ViewRng, near: number, far: number, half = 0): number {
+  const a = Math.max(KEEP + half, Math.min(near, far))
+  const b = Math.max(a, Math.max(near, far))
+  return rng.sign() * rng.range(a, b)
+}
+
+// --- 기괴한 기물 어휘 ---------------------------------------------------------
+const FLESH = 0x3a1d1c
+const FLESH_D = 0x24100f
+const SAC = 0x5b5a3e
+const BONE = 0x8f8a76
+const SINEW = 0x4a3230
+
+/** 벽에 자라난 살덩이 군집 */
+function growth(g: THREE.BufferGeometry[], rng: ViewRng, H: number, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const s = rng.sign()
+    const x = s * (HW - 0.05)
+    const y = rng.range(0.2, 2.3)
+    const z = rng.range(-H, H)
+    const r = rng.range(0.14, 0.30)
+    g.push(sp(r, 0.55, 1.0, 1.25, x, y, z, i % 2 === 0 ? FLESH : FLESH_D))
+    g.push(sp(r * 0.6, 0.5, 0.9, 1.0, x, y + r * 0.9, z + r * 0.5, FLESH_D))
+  }
+}
+
+/** 알집 — 벽·바닥 모서리에 뭉쳐 있다 */
+function eggSacs(g: THREE.BufferGeometry[], rng: ViewRng, H: number, n: number): void {
+  const s = rng.sign()
+  const cz = rng.range(-H + 0.5, H - 0.5)
+  for (let i = 0; i < n; i++) {
+    const r = rng.range(0.09, 0.19)
+    g.push(sp(
+      r, 1, 1.15, 1,
+      s * (HW - rng.range(0.10, 0.34)),
+      rng.range(0.06, 0.9),
+      cz + rng.range(-0.7, 0.7),
+      SAC,
+    ))
+  }
+}
+
+/** 천장에 매달린 고치. 머리 위(HEAD)보다 아래로 내려오지 않는다 */
+function cocoon(g: THREE.BufferGeometry[], rng: ViewRng, H: number, centered: boolean): void {
+  const x = centered ? rng.range(-0.5, 0.5) : sideX(rng, 0.9, HW - 0.35, 0.2)
+  const z = rng.range(-H + 0.4, H - 0.4)
+  const bottom = centered ? HEAD + 0.10 : rng.range(1.2, 1.9)
+  const len = rng.range(0.5, 0.85)
+  const top = Math.min(CH - 0.1, bottom + len)
+  const mid = (bottom + top) / 2
+  g.push(strut(x, top, z, x, CH, z, 0.018, SINEW))
+  g.push(sp(len * 0.34, 0.62, 1.0, 0.62, x, mid, z, SAC))
+  g.push(sp(len * 0.22, 0.7, 0.9, 0.7, x, bottom + len * 0.16, z, FLESH_D))
+}
+
+/** 천장에서 늘어진 힘줄 가닥 — 얇아서 지나가도 되지만 머리 위에서 멈춘다 */
+function sinewCurtain(g: THREE.BufferGeometry[], rng: ViewRng, H: number, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const x = rng.range(-1.2, 1.2)
+    const z = rng.range(-H, H)
+    const bottom = rng.range(HEAD, CH - 0.35)
+    g.push(strut(x, bottom, z, x + rng.range(-0.06, 0.06), CH, z, rng.range(0.008, 0.018), SINEW))
+  }
+}
+
+/** 벽에 꿰인 것 — 철근이 벽에서 튀어나오고 덩어리가 걸려 있다 */
+function impaled(g: THREE.BufferGeometry[], rng: ViewRng, H: number): void {
+  const s = rng.sign()
+  const z = rng.range(-H + 0.5, H - 0.5)
+  const y = rng.range(1.0, 1.9)
+  const x0 = s * (HW - 0.02)
+  const x1 = s * (HW - 0.62)
+  g.push(strut(x0, y, z, x1, y - 0.16, z, 0.026, 0x4c4a44))
+  g.push(sp(0.22, 0.68, 1.15, 0.62, s * (HW - 0.42), y - 0.22, z, FLESH))
+  g.push(strut(s * (HW - 0.40), y - 0.45, z, s * (HW - 0.30), y - 0.95, z, 0.035, FLESH_D))
+}
+
+/** 벽 밑동의 뼈 무더기 */
+function bonePile(g: THREE.BufferGeometry[], rng: ViewRng, H: number): void {
+  const s = rng.sign()
+  const cz = rng.range(-H + 0.6, H - 0.6)
+  const cx = s * rng.range(KEEP + 0.25, HW - 0.25)
+  g.push(sp(0.42, 1.25, 0.42, 1.0, cx, 0.10, cz, 0x2a2724))
+  for (let i = 0; i < 5; i++) {
+    const a = rng.range(0, Math.PI)
+    const l = rng.range(0.16, 0.34)
+    g.push(strut(
+      cx + Math.cos(a) * 0.2, rng.range(0.06, 0.26), cz + Math.sin(a) * 0.2,
+      cx + Math.cos(a) * (0.2 + l), rng.range(0.10, 0.34), cz + Math.sin(a) * (0.2 + l),
+      rng.range(0.015, 0.030), BONE, 4,
+    ))
+  }
+}
+
+/** 벽에 남은 갈퀴 자국 3줄 */
+function clawMarks(g: THREE.BufferGeometry[], rng: ViewRng, H: number): void {
+  const s = rng.sign()
+  const y = rng.range(0.7, 2.0)
+  const z = rng.range(-H, H)
+  for (let i = 0; i < 3; i++) {
+    g.push(bx(
+      0.03, rng.range(0.5, 0.9), 0.035,
+      s * (HW - 0.02), y + i * 0.001, z + (i - 1) * 0.11,
+      0x140909, 1, 0, 0, rng.range(-0.3, 0.3),
+    ))
+  }
+}
+
+/** 모서리를 가로지르는 막 — 벽과 천장 사이에만 친다 */
+function membrane(g: THREE.BufferGeometry[], rng: ViewRng, H: number): void {
+  const s = rng.sign()
+  const z = rng.range(-H + 0.8, H - 0.8)
+  const p = new THREE.PlaneGeometry(1.25, 1.25)
+  p.rotateY(-s * Math.PI / 4)
+  p.translate(s * (HW - 0.42), CH - 0.5, z)
+  g.push(paint(p, 0x4b4838))
+  for (let i = 0; i < 3; i++) {
+    g.push(strut(
+      s * (HW - 0.04), CH - 0.05, z + rng.range(-0.5, 0.5),
+      s * (HW - 0.80), CH - rng.range(0.7, 1.1), z + rng.range(-0.5, 0.5),
+      0.010, SAC, 3,
+    ))
+  }
+}
+
 /** 얼룩/노이즈 텍스처 (에셋 파일 없이 캔버스로 생성) */
 function makeGrimeTexture(rng: ViewRng, size = 256): THREE.Texture | null {
   if (typeof document === 'undefined') return null
@@ -211,17 +379,19 @@ export class CorridorStreamer {
     g.push(bx(0.05, 0.26, SEG_LEN, HW - 0.02, 0.13, 0, 0x33322c, 1.4))
 
     // --- 종류별 소품 ---
+    //   전부 KEEP(±0.86m) 밖, 또는 바닥(2cm)·머리 위(HEAD)에만 놓는다.
+    //   가운데 서 있는 기물은 카메라가 그대로 통과해 버린다.
     switch (this.kind) {
       case 'corridor': {
         for (let i = 0; i < 2; i++) {
-          const z = rng.range(-H, H)
           g.push(cy(0.055, SEG_LEN, 6, -HW + 0.22 + i * 0.14, CH - 0.28, 0, 0x59544a, Math.PI / 2))
-          if (rng.next() < 0.5) g.push(bx(0.30, 0.06, 0.30, rng.range(-HW + .5, HW - .5), 0.03, z, 0x2f3033, 1))
         }
-        g.push(bx(0.10, 0.55, 0.10, HW - 0.25, 0.28, rng.range(-H, H), 0x4a3c30, 1))
-        if (rng.next() < 0.45) {
-          g.push(bx(1.1, 0.9, 0.09, rng.range(-0.6, 0.6), 0.45, rng.range(-H, H), 0x5a4b3a, 1, 0, 0, rng.range(-0.5, 0.5)))
-        }
+        growth(g, rng, H, 2)
+        clawMarks(g, rng, H)
+        sinewCurtain(g, rng, H, 3)
+        if (rng.next() < 0.55) bonePile(g, rng, H)
+        // 바닥에 끌린 자국 (2cm — 밟고 지나가도 되는 유일한 것)
+        g.push(bx(0.5, 0.02, rng.range(1.4, 2.6), rng.range(-0.9, 0.9), 0.012, rng.range(-H, H), 0x2a1211, 1))
         break
       }
       case 'stair': {
@@ -245,21 +415,21 @@ export class CorridorStreamer {
         g.push(bx(0.1, 1.1, 0.1, wallX - side * 0.95, 1.15, H - 3.4, 0x53504a, 1))
         // 위층으로 뚫린 어두운 개구부 (계단이 어디로 가는지 읽히게)
         g.push(bx(1.5, 0.02, 2.2, wallX - side * 0.6, CH - 0.01, H - 2.3, 0x07080a, 1))
+        cocoon(g, rng, H, false)
+        bonePile(g, rng, H)
         break
       }
+      // 사무실이 아니라 **둥지**다. 벽과 천장이 알집과 막으로 덮여 있다.
       case 'office': {
-        for (let i = 0; i < 2; i++) {
-          const x = rng.sign() * rng.range(0.75, 1.15)
-          const z = rng.range(-H + 0.6, H - 0.6)
-          g.push(bx(0.95, 0.06, 0.62, x, 0.72, z, 0x6a5a44, 1))
-          g.push(bx(0.07, 0.72, 0.07, x - 0.4, 0.36, z - 0.24, 0x3b3a37, 1))
-          g.push(bx(0.07, 0.72, 0.07, x + 0.4, 0.36, z + 0.24, 0x3b3a37, 1))
-        }
-        g.push(bx(0.06, 1.5, 1.6, -HW + 0.2, 0.75, rng.range(-H, H), 0x4d5145, 1.4))
-        g.push(bx(0.55, 0.06, 0.55, rng.range(-0.6, 0.6), 0.42, rng.range(-H, H), 0x54453a, 1, rng.range(-0.6, 0.6)))
-        if (variant % 2 === 0) g.push(bx(1.1, 0.04, 1.1, rng.range(-0.7, 0.7), CH - 0.02, rng.range(-H, H), 0x1b1c1e, 1))
+        eggSacs(g, rng, H, 7)
+        membrane(g, rng, H)
+        growth(g, rng, H, 2)
+        if (variant % 2 === 0) cocoon(g, rng, H, true)
+        // 바닥에 깔린 점액 막 (2cm)
+        g.push(bx(HW * 1.7, 0.02, SEG_LEN * 0.8, 0, 0.014, 0, 0x2b2a1c, 2))
         break
       }
+      // 배관실 — 관에 꿰인 것들이 매달려 있다
       case 'pipe': {
         for (let i = 0; i < 5; i++) {
           const y = 0.5 + i * 0.5
@@ -268,19 +438,28 @@ export class CorridorStreamer {
         }
         g.push(cy(0.20, 0.12, 8, HW - 0.34, 1.5, rng.range(-H, H), 0x6d5b3c, 0, Math.PI / 2))
         g.push(bx(HW * 1.9, 0.02, SEG_LEN * 0.9, 0, 0.015, 0, 0x1d2426, 2))  // 물 고임
+        impaled(g, rng, H)
+        growth(g, rng, H, 1)
+        sinewCurtain(g, rng, H, 4)
         break
       }
+      // 차고 — 차량은 벽에 처박혀 있다. 통로 한가운데 두면 그대로 통과된다.
       case 'garage': {
         g.push(bx(0.14, CH * 0.8, SEG_LEN * 0.85, -HW - 0.02, CH * 0.45, 0, 0x63594a, 3.2))
         if (variant % 2 === 0) {
-          g.push(bx(1.7, 0.6, 3.0, rng.range(-0.4, 0.4), 0.42, rng.range(-H, H), 0x4a2f2c, 1))
-          g.push(bx(1.4, 0.5, 1.3, 0, 0.92, 0.2, 0x35393d, 1))
-          g.push(cy(0.30, 0.20, 8, -0.85, 0.30, -1.0, 0x1e1f21, 0, Math.PI / 2))
-          g.push(cy(0.30, 0.20, 8, 0.85, 0.30, -1.0, 0x1e1f21, 0, Math.PI / 2))
+          const s = variant % 4 === 0 ? 1 : -1
+          const cx = s * 1.32
+          g.push(bx(0.90, 0.62, 3.0, cx, 0.44, rng.range(-0.4, 0.4), 0x4a2f2c, 1, 0, 0, s * 0.22))
+          g.push(bx(0.80, 0.52, 1.3, cx + s * 0.06, 0.94, 0.2, 0x35393d, 1, 0, 0, s * 0.22))
+          g.push(cy(0.30, 0.20, 8, cx - s * 0.42, 0.30, -1.0, 0x1e1f21, 0, Math.PI / 2))
+          g.push(cy(0.30, 0.20, 8, cx - s * 0.42, 0.30, 1.0, 0x1e1f21, 0, Math.PI / 2))
         }
-        g.push(bx(0.5, 0.9, 0.5, HW - 0.4, 0.45, rng.range(-H, H), 0x554b3c, 1))
+        bonePile(g, rng, H)
+        clawMarks(g, rng, H)
+        impaled(g, rng, H)
         break
       }
+      // 예배당 — 기둥은 벽에 붙이고, 시체는 천장에 매단다 (신도석은 통로를 막았다)
       case 'chapel': {
         for (let i = 0; i < 2; i++) {
           const z = -H + 1 + i * 2
@@ -288,11 +467,17 @@ export class CorridorStreamer {
           g.push(cy(0.20, CH, 8, HW - 0.32, CH / 2, z, 0x6a6558))
           g.push(bx(0.5, 0.18, 0.5, -HW + 0.32, CH - 0.1, z, 0x77705f, 1))
           g.push(bx(0.5, 0.18, 0.5, HW - 0.32, CH - 0.1, z, 0x77705f, 1))
-          g.push(bx(1.5, 0.10, 0.36, 0, 0.46, z + 0.6, 0x4a3a2a, 1))
-          g.push(bx(1.5, 0.42, 0.10, 0, 0.66, z + 0.44, 0x4a3a2a, 1))
+          // 부서진 신도석 — 벽 쪽으로 밀려 쌓여 있다
+          const s = i === 0 ? 1 : -1
+          g.push(bx(0.62, 0.10, 1.5, s * 1.22, 0.46, z + 0.6, 0x4a3a2a, 1, 0, s * 0.3, 0))
+          g.push(bx(0.62, 0.42, 0.10, s * 1.22, 0.66, z + 0.0, 0x4a3a2a, 1))
         }
-        g.push(bx(0.9, 0.10, 0.10, 0, CH - 0.5, 0, 0x8a7a4a, 1))
-        g.push(bx(0.10, 0.9, 0.10, 0, CH - 0.5, 0, 0x8a7a4a, 1))
+        // 성물 — 통로 위에 매달려 있다
+        g.push(bx(0.9, 0.10, 0.10, 0, CH - 0.45, 0, 0x8a7a4a, 1))
+        g.push(bx(0.10, 0.9, 0.10, 0, CH - 0.45, 0, 0x8a7a4a, 1))
+        cocoon(g, rng, H, true)
+        cocoon(g, rng, H, false)
+        membrane(g, rng, H)
         break
       }
     }

@@ -249,7 +249,12 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
   const carryRatio = computeHeatCarry(s.loadout)
   const carried = s.heat * carryRatio
   s.heatStartBase = BASE_HEAT + computeStartHeat(s.loadout) + carried
-  out.push({ t: 'magEnd', heatCarried: carried, totalDamage: s.magDamage })
+  out.push({
+    t: 'magEnd',
+    heatCarried: carried,
+    heatAfter: s.heatStartBase,
+    totalDamage: s.magDamage,
+  })
 
   s.magsFired += 1
 

@@ -56,15 +56,71 @@ function cyl(
 
 const HALF_PI = Math.PI / 2
 
-const MAG_HOME = new THREE.Vector3(0, -0.190, -0.178)
+/**
+ * 탄창 기준점은 **급탄구(feed lips)** 다 — 총에 물리는 그 지점.
+ * 용량에 따라 탄창 길이가 달라지므로, 중심이 아니라 위쪽 끝을 고정해야
+ * 어떤 용량이든 수신부 아래에 정확히 물린다.
+ */
+const MAG_HOME = new THREE.Vector3(0, -0.105, -0.178)
 /**
  * 탄창 '제시' 자세 — 총 **왼쪽 옆**으로 빼낸다.
  * 탄창은 총 아래에 있어서, 카메라가 뒤에서 보는 구도에서는 몸체에 가린다.
  * 옆으로 빼야 삽탄이 실제로 보인다.
  */
-const MAG_PRESENT = new THREE.Vector3(-0.165, -0.105, -0.255)
+const MAG_PRESENT = new THREE.Vector3(-0.165, -0.020, -0.255)
 const ROUND_GEO = new THREE.CylinderGeometry(0.0115, 0.0115, 0.052, 8, 1, false)
 ROUND_GEO.rotateX(Math.PI / 2)
+
+/** 탄창 앞뒤 경사 (실총의 레이크). 급탄구 기준으로 기울인다 */
+const MAG_RAKE = 0.10
+
+/**
+ * 용량 → 탄창 형상.
+ * 탄창은 이 게임에서 **규칙 변경자**다 — 용량이 곧 한 탄창 안의 곱셈 횟수다.
+ * 그 규칙이 총을 봤을 때 바로 읽혀야 하므로, 용량마다 실루엣을 바꾼다:
+ *   1~2발 = 짧고 뭉툭한 블록 / 3~7발 = 스틱 / 8발 이상 = 드럼.
+ */
+function magShape(cap: number): { h: number; drum: boolean; stubby: boolean } {
+  const c = Math.max(1, Math.min(12, Math.round(cap)))
+  return {
+    h: Math.max(0.070, Math.min(0.300, 0.050 + c * 0.028)),
+    drum: c >= 8,
+    stubby: c <= 2,
+  }
+}
+
+/**
+ * 탄창 지오메트리. y=0 이 급탄구, 아래로 h 만큼 내려간다.
+ * **앞면이 열린 채널**이다 — 막힌 상자로 만들면 안에 든 탄이 보이지 않아
+ * 삽탄 연출이 통째로 헛돈다. 양 옆판 + 뒷판 + 바닥 + 밑판으로 만든다.
+ */
+function buildMagGeometry(cap: number): THREE.BufferGeometry {
+  const { h, drum, stubby } = magShape(cap)
+  const w = 0.068 // 내폭
+  const t = 0.009 // 판 두께
+  const parts: THREE.BufferGeometry[] = [
+    box(t, h, 0.100, -(w + t) / 2, -h / 2, 0),            // 좌측판
+    box(t, h, 0.100, (w + t) / 2, -h / 2, 0),             // 우측판
+    box(w + t, h, 0.010, 0, -h / 2, -0.045),              // 뒷판
+    box(w + t, 0.013, 0.100, 0, -h + 0.0065, 0),          // 바닥 (팔로워)
+    box(w + t + 0.006, 0.014, 0.106, 0, -h - 0.008, 0.008), // 밑판
+  ]
+  if (drum) {
+    // 드럼 — 옆으로 튀어나온 원반. 8발 이상은 실루엣부터 다르다.
+    //   **채널 뒤쪽**에 붙인다 — 앞에 두면 삽탄된 탄을 가려서 FILO 연출이 안 보인다.
+    parts.push(cyl(0.084, 0.084, 0.050, 12, 0, -h * 0.74, -0.050, 0, 0, HALF_PI))
+    parts.push(cyl(0.032, 0.032, 0.058, 8, 0, -h * 0.74, -0.050, 0, 0, HALF_PI))
+    parts.push(box(0.020, h * 0.45, 0.020, 0, -h * 0.36, -0.048))
+  }
+  if (stubby) {
+    // 1~2발 — 짧은 대신 두꺼운 블록. "이건 한두 발짜리다"가 바로 읽힌다.
+    parts.push(box(w + 0.034, 0.022, 0.118, 0, -h * 0.55, 0))
+    parts.push(box(0.016, 0.030, 0.016, 0, -h - 0.020, 0.030))
+  }
+  const merged = mergeGeometries(parts)!
+  for (const g of parts) g.dispose()
+  return merged
+}
 
 export class GunRig {
   /** 카메라에 붙일 최상위 노드. 위치는 GameScene.resize() 가 잡아준다 */
@@ -85,8 +141,13 @@ export class GunRig {
   private readonly glowMat: THREE.MeshBasicMaterial
 
   private readonly meshes: THREE.Mesh[] = []
+  /** 분리/결합 애니메이션을 받는 노드 (급탄구가 원점) */
   private readonly magRig = new THREE.Group()
-  private readonly magMesh: THREE.Mesh
+  /** 정적 레이크를 담는 안쪽 노드 — 탄창 본체와 탄이 모두 여기 들어간다 */
+  private readonly magTilt = new THREE.Group()
+  private magMesh: THREE.Mesh
+  private magCap = 5
+  private magH = magShape(5).h
   /** 재장전 중 탄창에 들어가는 실제 탄 메시들 */
   private readonly roundMeshes: THREE.Mesh[] = []
   private readonly roundHome: THREE.Vector3[] = []
@@ -189,18 +250,11 @@ export class GunRig {
     // 탄창은 **분리되는 부품**이다. 재장전 연출에서 총에서 빼내 카메라 앞으로
     // 가져오고, 탄을 넣고, 다시 물린다. 그래서 자기 피벗을 가진 그룹으로 만든다.
     // (지오메트리를 원점 기준으로 만들고 그룹을 제자리에 놓는다)
-    // 탄창은 **앞면이 열린 채널**이다. 막힌 상자로 만들면 안에 든 탄이 보이지 않아
-    // 삽탄 연출이 통째로 헛돈다. 양 옆판 + 뒷판 + 바닥 + 밑판으로 만든다.
-    const magGeo = mergeGeometries([
-      box(0.009, 0.170, 0.100, -0.030, 0, 0, 0.10), // 좌측판
-      box(0.009, 0.170, 0.100, 0.030, 0, 0, 0.10), // 우측판
-      box(0.068, 0.170, 0.010, 0, 0, -0.045, 0.10), // 뒷판
-      box(0.068, 0.013, 0.100, 0, -0.079, 0, 0.10), // 바닥
-      box(0.074, 0.014, 0.106, 0, -0.090, 0.008, 0.10), // 밑판
-    ])!
-    this.magMesh = new THREE.Mesh(magGeo, this.steelMat)
+    this.magMesh = new THREE.Mesh(buildMagGeometry(5), this.steelMat)
+    this.magTilt.rotation.x = MAG_RAKE
+    this.magTilt.add(this.magMesh)
     this.magRig.position.copy(MAG_HOME)
-    this.magRig.add(this.magMesh)
+    this.magRig.add(this.magTilt)
     this.parts.add(this.magRig)
 
     const boltGeo = mergeGeometries([
@@ -398,6 +452,22 @@ export class GunRig {
   //   ③ 탄창을 다시 물리고             ④ 장전손잡이를 당겼다 놓는다
   // =========================================================================
 
+  /**
+   * 탄창 용량이 바뀌면 모델을 갈아 끼운다.
+   * 용량은 이 게임의 규칙 변경자이므로 총만 봐도 몇 발짜리인지 읽혀야 한다.
+   */
+  setMagazineCap(cap: number): void {
+    const c = Math.max(1, Math.min(12, Math.round(cap) || 1))
+    if (c === this.magCap) return
+    this.magCap = c
+    this.magH = magShape(c).h
+    const old = this.magMesh
+    this.magTilt.remove(old)
+    old.geometry.dispose()
+    this.magMesh = new THREE.Mesh(buildMagGeometry(c), this.steelMat)
+    this.magTilt.add(this.magMesh)
+  }
+
   /** 재장전 시작 — 넣을 탄의 색을 순서대로 받는다 (index 0 = 가장 먼저 발사될 탄) */
   beginReload(colors: readonly number[]): void {
     this.clearRounds()
@@ -408,8 +478,11 @@ export class GunRig {
 
     const n = Math.max(1, colors.length)
     // 탄창 안 적재 위치: 아래부터 쌓인다. 마지막에 넣은 탄(=발사 순서 0)이 맨 위.
-    const top = 0.055
-    const gap = Math.min(0.026, 0.11 / n)
+    // 위치는 **현재 탄창 모델의 안쪽 높이**에서 뽑는다 — 2발짜리에 5발이 겹쳐
+    // 튀어나오면 용량을 실루엣으로 읽게 만든 의미가 없어진다.
+    const inner = Math.max(0.03, this.magH - 0.030)
+    const top = -0.020
+    const gap = Math.min(0.026, inner / n)
     for (let i = 0; i < colors.length; i += 1) {
       const mat = new THREE.MeshStandardMaterial({
         color: colors[i],
@@ -420,7 +493,7 @@ export class GunRig {
       const m = new THREE.Mesh(ROUND_GEO, mat)
       m.layers.set(1)
       m.visible = false
-      this.magRig.add(m)
+      this.magTilt.add(m)
       this.roundMeshes.push(m)
       this.roundHome.push(new THREE.Vector3(0, top - i * gap, 0.020))
     }
@@ -513,7 +586,7 @@ export class GunRig {
 
   private clearRounds(): void {
     for (const m of this.roundMeshes) {
-      this.magRig.remove(m)
+      this.magTilt.remove(m)
       const mat = m.material
       if (mat instanceof THREE.Material) mat.dispose()
     }
