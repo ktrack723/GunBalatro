@@ -9,7 +9,9 @@ import { makeEnemy } from '../core/data/enemies'
 import { makeRng } from '../core/rng'
 import { ATT_BY_ID } from '../core/data/attachments'
 import { SPECIAL_BY_ID } from '../core/data/specials'
-import { deathDistribution, simulateMany, survivalCurve } from './harness'
+import { deathDistribution, emptyTelemetry, simulateMany, simulateRun, survivalCurve } from './harness'
+import type { TraceLine } from './harness'
+import { renderPlaythrough, renderTelemetry } from './playthrough'
 import type { BotSkill, } from './bot'
 
 const out = (s = ''): void => {
@@ -29,6 +31,9 @@ function arg(name: string, def: string): string {
 }
 
 const RUNS = Math.max(1, parseInt(arg('runs', '200'), 10) || 200)
+/** --play=N : 판 N개를 통째로 읽을 수 있게 풀어 쓴다 (리비전마다 5판) */
+const PLAY = Math.max(0, parseInt(arg('play', '0'), 10) || 0)
+const SEED0 = Math.max(1, parseInt(arg('seed', '1'), 10) || 1)
 const STAKE = Math.max(1, parseInt(arg('stake', '1'), 10) || 1)
 const SKILL = arg('skill', 'both')
 
@@ -96,7 +101,24 @@ function orderSensitivity(startHeat: number): { bySector: number[]; overall: num
 }
 
 // ---------------------------------------------------------------------------
+function playthroughReport(): void {
+  out('════ GunBalatro 플레이스루 리포트 ════')
+  out(`${PLAY}판 · 성전 ${STAKE} · 봇 ${SKILL === 'both' ? 'greedy' : SKILL}`)
+  const skill: BotSkill = SKILL === 'both' ? 'greedy' : (SKILL as BotSkill)
+  const tel = emptyTelemetry()
+  for (let i = 0; i < PLAY; i += 1) {
+    const trace: TraceLine[] = []
+    const res = simulateRun(SEED0 + i, skill, STAKE, trace, tel)
+    out(renderPlaythrough(trace, res, i + 1))
+  }
+  out(renderTelemetry(tel, PLAY))
+}
+
 function main(): void {
+  if (PLAY > 0) {
+    playthroughReport()
+    return
+  }
   out('════ GunBalatro v2 밸런스 시뮬레이션 ════')
   out('런 ' + RUNS + ' · 성전 등급 ' + STAKE)
   out()

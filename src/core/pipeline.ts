@@ -152,19 +152,6 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
 
   s.enemy.hp -= damage
 
-  out.push({
-    t: 'shot',
-    index,
-    round,
-    dmg: Math.round(dmg),
-    heatBefore: ctx.heatBefore,
-    heatAfter: s.heat,
-    damage,
-    rawDamage,
-    triggered: ctx.triggered.slice(),
-    enemyHpAfter: s.enemy.hp,
-  })
-
   // ---- STEP 7: 발사 후 -----------------------------------------------------
   const distBefore = s.distance
   s.doubleNext = false
@@ -181,6 +168,24 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
     ctx.self = passive.id
     safe(() => passive.onAfterShot?.(ctx), passive.id)
   }
+
+  // 사격 이벤트는 **STEP 7 이 끝난 뒤**에 발행한다.
+  //   예전에는 STEP 6 직후에 발행해서, onAfterShot 에서만 발동하는 것들
+  //   (황동 부적·영혼 표식·이단심문관의 화염·충격탄 …)이 triggered 에
+  //   영원히 실리지 않았다. 그래서 화면에서 랙이 번쩍이지 않았고,
+  //   시뮬레이터 계측에서는 "장착됐는데 한 번도 발동 안 함"으로 잘못 잡혔다.
+  out.push({
+    t: 'shot',
+    index,
+    round,
+    dmg: Math.round(dmg),
+    heatBefore: ctx.heatBefore,
+    heatAfter: s.heat,
+    damage,
+    rawDamage,
+    triggered: ctx.triggered.slice(),
+    enemyHpAfter: s.enemy.hp,
+  })
 
   if (s.distance !== distBefore) {
     out.push({ t: 'knockback', meters: s.distance - distBefore, distanceAfter: s.distance })

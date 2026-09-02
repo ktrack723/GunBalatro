@@ -3,7 +3,9 @@
 //   시뮬레이터가 밸런스의 유일한 오라클이다. 봇의 판단이 편향되면 측정이 못 쓴다 —
 //   그래서 보상/상점 선택은 하드코딩 우선순위가 아니라 **실측 화력 증가분**으로 한다.
 // ============================================================================
-import type { Attachment, RewardItem, RunState, Threat } from '../core/types'
+import type { Attachment, FireEvent, RewardItem, RunState, Threat } from '../core/types'
+import { SPECIAL_BY_ID } from '../core/data/specials'
+import { ATT_BY_ID } from '../core/data/attachments'
 import { makeRng } from '../core/rng'
 import { startCombat } from '../core/combat'
 import { computeFireCost } from '../core/pipeline'
@@ -36,6 +38,59 @@ export interface DoorChoice {
   offered: [Threat, Threat]
   chosen: Threat
   tookRiskier: boolean
+}
+
+/**
+ * 플레이스루 추적 — "이 판에서 무슨 일이 있었나"를 그대로 적는다.
+ * 집계 통계는 무엇이 잘못됐는지 알려주지만 **왜** 인지는 알려주지 않는다.
+ * 리비전마다 몇 판을 통째로 읽어야 원인이 보인다.
+ */
+export type TraceLine =
+  | { k: 'node'; sector: number; nodeIndex: number; kind: string }
+  | { k: 'doors'; offered: [Threat, Threat]; chosen: Threat; power: number; need: number }
+  | {
+      k: 'enemy'
+      label: string
+      hp: number
+      passive: string | null
+      speed: number
+      dist: number
+      cap: number
+      fireCost: number
+      actions: number
+    }
+  | {
+      k: 'mag'
+      index: number
+      plan: string[]
+      heatFrom: number
+      heatTo: number
+      carried: number
+      damage: number
+      hpAfter: number
+      distAfter: number
+      shots: Array<{ name: string; dmg: number; heat: number; damage: number; trig: string[] }>
+    }
+  | { k: 'reward'; label: string }
+  | { k: 'buy'; label: string; price: number; brassLeft: number }
+  | { k: 'skip'; gain: number }
+  | { k: 'derelict'; name: string; result: string }
+  | { k: 'win'; sector: number; magsUsed: number; distLeft: number }
+  | { k: 'death'; where: string; hpLeft: number; hpFrac: number }
+  | { k: 'end'; status: string; sector: number }
+
+/** 부착물/특수탄이 실제로 몇 번 발동했나 — "사장된 아이템" 의 진짜 증거 */
+export interface Telemetry {
+  trigger: Record<string, number>
+  specialShots: Record<string, number>
+  equipped: Record<string, number>
+  magsPerCombat: number[]
+  heatAtMagEnd: number[]
+  winDistFrac: number[]
+}
+
+export function emptyTelemetry(): Telemetry {
+  return { trigger: {}, specialShots: {}, equipped: {}, magsPerCombat: [], heatAtMagEnd: [], winDistFrac: [] }
 }
 
 export interface RunResult {
@@ -134,7 +189,7 @@ export function firepower(run: RunState): number {
 }
 
 // ---------------------------------------------------------------------------
-function takeReward(run: RunState, threat: Threat): void {
+function takeReward(run: RunState, threat: Threat, trace?: TraceLine[]): void {
   const items = rollRewards(run, threat)
   const before = firepower(run)
   let best: RewardItem | null = null
@@ -156,9 +211,17 @@ function takeReward(run: RunState, threat: Threat): void {
     const gain = skipRewardBrass(run.stake)
     run.loadout.brass += gain
     run.stats.brassEarned += gain
+    trace?.push({ k: 'skip', gain })
     return
   }
   applyReward(run, best)
+  trace?.push({
+    k: 'reward',
+    label:
+      best.t === 'attachment'
+        ? best.attachment.name + ' [' + best.attachment.slot + '/' + best.attachment.rarity + ']'
+        : best.special.name + ' x' + best.count,
+  })
 }
 
 function purchaseValue(run: RunState, e: ArmoryEntry, before: number): number {
@@ -179,7 +242,7 @@ function purchaseValue(run: RunState, e: ArmoryEntry, before: number): number {
   return (after - before + bonus) / paid
 }
 
-function visitShop(run: RunState, kind: 'armory' | 'reliquary'): void {
+function visitShop(run: RunState, kind: 'armory' | 'reliquary', trace?: TraceLine[]): void {
   const failed = new Set<string>()
   for (let i = 0; i < MAX_PURCHASES; i += 1) {
     const stock = kind === 'armory' ? armoryStock(run) : reliquaryStock(run)
@@ -199,6 +262,7 @@ function visitShop(run: RunState, kind: 'armory' | 'reliquary'): void {
     const brassBefore = run.loadout.brass
     buy(run, best)
     if (run.loadout.brass === brassBefore) failed.add(best.kind + '/' + best.label)
+    else trace?.push({ k: 'buy', label: best.label, price: best.price, brassLeft: run.loadout.brass })
   }
 }
 
@@ -241,7 +305,16 @@ function buildOf(run: RunState): string[] {
   return out
 }
 
-export function simulateRun(seed: number, skill: BotSkill, stake: number): RunResult {
+const roundName = (special: string | null): string =>
+  special === null ? '기본' : (SPECIAL_BY_ID[special]?.name ?? special)
+
+export function simulateRun(
+  seed: number,
+  skill: BotSkill,
+  stake: number,
+  trace?: TraceLine[],
+  tel?: Telemetry,
+): RunResult {
   const run = newRun(seed, stake)
   const doorChoices: DoorChoice[] = []
   let deathNode: string | null = null
@@ -249,11 +322,19 @@ export function simulateRun(seed: number, skill: BotSkill, stake: number): RunRe
 
   for (let guard = 0; guard < 80 && run.status === 'alive'; guard += 1) {
     const node = currentNode(run)
+    trace?.push({ k: 'node', sector: run.sector, nodeIndex: run.nodeIndex, kind: node })
 
     if (node === 'combat' || node === 'boss') {
       const power = firepower(run)
       const { index, choice } = chooseDoor(run, power)
       doorChoices.push(choice)
+      trace?.push({
+        k: 'doors',
+        offered: choice.offered,
+        chosen: choice.chosen,
+        power: Math.round(power),
+        need: Math.round(requiredPower(run, choice.chosen)),
+      })
       const { enemy, threat } = enterDoor(run, index)
       if (enemy === null) {
         advanceNode(run)
@@ -264,33 +345,107 @@ export function simulateRun(seed: number, skill: BotSkill, stake: number): RunRe
       const staged = { ...enemy, startDist: Math.max(4, enemy.startDist - stakePenalty) }
       const rng = makeRng(run.rngState).fork(run.sector * 733 + run.nodeIndex * 17 + 3)
       const s = startCombat(run.loadout, staged, rng, mods)
-      const res = playCombat(s, skill)
+      if (tel !== undefined) {
+        for (const a of s.attachments) tel.equipped[a.id] = (tel.equipped[a.id] ?? 0) + 1
+      }
+      trace?.push({
+        k: 'enemy',
+        label: s.enemy.label,
+        hp: s.enemy.maxHp,
+        passive: s.enemy.passive?.name ?? null,
+        speed: s.enemy.speed,
+        dist: s.distance,
+        cap: s.cap,
+        fireCost: s.fireCost,
+        actions: Math.floor(s.distance / Math.max(1, s.fireCost)),
+      })
+
+      let magIndex = 0
+      const res = playCombat(s, skill, (events: readonly FireEvent[]) => {
+        const shots: Array<{ name: string; dmg: number; heat: number; damage: number; trig: string[] }> = []
+        let plan: string[] = []
+        let heatFrom = 0
+        let heatTo = 0
+        let carried = 0
+        let damage = 0
+        let hpAfter = s.enemy.hp
+        for (const ev of events) {
+          if (ev.t === 'magStart') {
+            plan = ev.plan.map((r) => roundName(r.special))
+            heatFrom = ev.heat
+          } else if (ev.t === 'shot') {
+            shots.push({
+              name: roundName(ev.round.special),
+              dmg: ev.dmg,
+              heat: ev.heatAfter,
+              damage: ev.damage,
+              trig: ev.triggered.slice(),
+            })
+            heatTo = ev.heatAfter
+            hpAfter = ev.enemyHpAfter
+            if (tel !== undefined) {
+              for (const id of ev.triggered) tel.trigger[id] = (tel.trigger[id] ?? 0) + 1
+              if (ev.round.special !== null) {
+                tel.specialShots[ev.round.special] = (tel.specialShots[ev.round.special] ?? 0) + 1
+              }
+            }
+          } else if (ev.t === 'magEnd') {
+            carried = ev.heatCarried
+            damage = ev.totalDamage
+            tel?.heatAtMagEnd.push(heatTo)
+          }
+        }
+        magIndex += 1
+        trace?.push({
+          k: 'mag',
+          index: magIndex,
+          plan,
+          heatFrom,
+          heatTo,
+          carried,
+          damage,
+          hpAfter,
+          distAfter: s.distance,
+          shots,
+        })
+      })
 
       run.stats.shotsFired += s.shotsFired
       run.stats.totalDamage += s.totalDamage
       if (s.peakHeat > peak) peak = s.peakHeat
       run.loadout.specials = { ...s.specials }
+      tel?.magsPerCombat.push(s.magsFired)
 
       if (!res.win) {
         deathNode = 'S' + run.sector + 'N' + run.nodeIndex + ':' + node
+        trace?.push({
+          k: 'death',
+          where: deathNode,
+          hpLeft: s.enemy.hp,
+          hpFrac: s.enemy.hp / Math.max(1, s.enemy.maxHp),
+        })
         run.status = 'dead'
         break
       }
+      trace?.push({ k: 'win', sector: run.sector, magsUsed: s.magsFired, distLeft: Math.max(0, s.distance) })
+      tel?.winDistFrac.push(Math.max(0, s.distance) / Math.max(1, s.enemy.startDist))
       run.stats.combatsWon += 1
       const gain = combatBrass(s, threat)
       run.loadout.brass += gain
       run.stats.brassEarned += gain
-      takeReward(run, threat)
+      takeReward(run, threat, trace)
     } else if (node === 'armory' || node === 'reliquary') {
-      visitShop(run, node)
+      visitShop(run, node, trace)
     } else if (node === 'derelict') {
       withRng(run, (r) => {
         const ev = pickDerelict(r, new Set())
-        ev.options[r.int(ev.options.length)].apply(run, r)
+        const msg = ev.options[r.int(ev.options.length)].apply(run, r)
+        trace?.push({ k: 'derelict', name: ev.name, result: msg })
       })
     }
     advanceNode(run)
   }
+  trace?.push({ k: 'end', status: run.status, sector: run.sector })
 
   let left = 0
   for (const v of Object.values(run.loadout.specials)) left += v

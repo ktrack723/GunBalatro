@@ -4,7 +4,7 @@
 //     ① 이번 탄창에 어떤 특수탄을 몇 발 넣을까
 //     ② 그 탄들을 어떤 순서로 넣을까 (온도가 누적되므로 순서가 곧 데미지다)
 // ============================================================================
-import type { CombatState, Round } from '../core/types'
+import type { CombatState, FireEvent, Round } from '../core/types'
 import { basicRound, fire, makeRound, previewDamage } from '../core/combat'
 import { SPECIAL_BY_ID } from '../core/data/specials'
 
@@ -108,6 +108,8 @@ export function estimateMagDamage(s: CombatState, skill: BotSkill): number {
 export function playCombat(
   s: CombatState,
   skill: BotSkill,
+  /** 플레이스루 리포트용 — 사격 이벤트를 그대로 넘겨받는다 (없으면 버린다) */
+  onEvents?: (ev: readonly FireEvent[]) => void,
 ): { win: boolean; magsUsed: number; peakHeat: number; distanceLeft: number } {
   let guard = 0
   while (guard < MAX_ACTIONS) {
@@ -115,7 +117,8 @@ export function playCombat(
     if (s.enemy.hp <= 0) break
     if (s.distance <= 0) break
     const act = chooseAction(s, skill)
-    fire(s, act.plan)
+    const ev = fire(s, act.plan)
+    if (onEvents !== undefined) onEvents(ev)
   }
   return {
     win: s.enemy.hp <= 0,
