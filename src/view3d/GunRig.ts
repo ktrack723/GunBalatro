@@ -322,9 +322,10 @@ export class GunRig {
     const h = Math.max(1, heat)
     const next = heatStageIndex(h)
     if (next !== this.stage) {
-      // 단계 경계 통과 — 총이 한 번 크게 번쩍한다
+      // 단계 경계 통과 — **총 자체가** 한 번 크게 달아오른다.
+      // 예전에는 화면 전체를 흰색 오버레이로 덮었는데, 그건 조명이 아니라 눈속임이라
+      // 어디서 무슨 일이 났는지 알려주지 않는다. 발광은 총에서 난다.
       this.stagePulse = 1
-      this.fx.screenFlash(next > this.stage ? 0.10 + next * 0.03 : 0.05, 240)
       this.onSound('heat.stage.' + HEAT_STAGES[next]!.name)
       this.stage = next
     }

@@ -136,35 +136,53 @@ async function playShot(
   for (const id of ev.triggered) d.view.flashRack(id)
   if (ev.triggered.length > 0) sfx('proc', 1, 60)
 
-  // ── 발사 순간 ────────────────────────────────────────────────────────────
-  //   총구 화염 · 화면 번쩍 · 반동 · 총성은 **전부 같은 프레임**이다.
-  //   예전에는 번쩍/반동/총성이 t=0, 총구 화염이 t=20ms 였다 — 20ms 는 작아 보여도
-  //   "총이 발사되기 전에 화면이 번쩍인다"로 또렷이 읽힌다. 원인보다 결과가 먼저
-  //   보이면 타격감이 통째로 무너진다.
+  const scene = has3d(d.scene) ? d.scene : null
+
+  // ── ① 발사 순간 ─────────────────────────────────────────────────────────
+  //   총구 화염 · 광원 · 반동 · 총성이 전부 같은 프레임이다.
+  //   **화면을 흰색으로 덮지 않는다.** 대신 총구에 진짜 점광이 켜져 복도 전체가
+  //   한 순간 밝아진다 — 벽도 기물도 적도 각자의 거리만큼 밝아지므로
+  //   "어디서 빛이 났는지" 가 화면에 남는다. 오버레이는 그걸 못 한다.
   sfxShot(ev.heatAfter)
-  if (has3d(d.scene)) {
-    const muzzle = d.scene.gun.muzzleWorld
-    d.scene.fx.muzzleFlash(muzzle)
-    d.scene.fx.tracer(muzzle, d.scene.enemy.targetWorld, color)
-    d.scene.gun.kick(0.6 + Math.min(1, ev.heatAfter / 30))
-    d.scene.fx.screenFlash(0.88 * flash, dur(40, sp))
-    d.scene.fx.aberration(1 * flash, dur(90, sp))
-    d.scene.fx.shake((0.35 + ev.heatAfter * 0.02) * shake, dur(220, sp))
+  let flightMs = 90
+  if (scene !== null) {
+    const from = scene.gun.muzzleWorld.clone()
+    const to = scene.enemy.targetWorld.clone()
+    // 비행 시간은 거리에 비례한다 — 멀리 있는 적일수록 탄이 '가는 게' 보인다
+    flightMs = Math.round(Math.min(190, Math.max(70, 58 + from.distanceTo(to) * 4.6)))
+    scene.fx.muzzleFlash(from)
+    scene.fx.bullet(from, to, color, dur(flightMs, sp) / 1000)
+    scene.gun.kick(0.6 + Math.min(1, ev.heatAfter / 30))
+    // 발사 자체의 흔들림은 작게. 큰 흔들림은 착탄에 몰아준다.
+    scene.fx.shake(0.22 * shake, dur(120, sp))
   }
   d.haptic('heavy')
 
-  await wait(120, sp)
-  if (has3d(d.scene)) {
+  // ── ② 탄이 날아가는 동안 ────────────────────────────────────────────────
+  await wait(flightMs, sp)
+
+  // ── ③ 착탄 — 여기가 이 게임의 '한 컷' 이다 ──────────────────────────────
+  //   스파크가 터지고, 적이 뒤로 밀리며 다리가 꺾이고, **시간이 멈춘다.**
+  //   히트스톱이 없으면 스파크가 그냥 스쳐 지나가서 타격이 사건으로 안 읽힌다.
+  if (scene !== null) {
+    const hit = scene.enemy.targetWorld.clone()
+    const power = 0.7 + Math.min(1.1, (ev.damage / Math.max(1, s.enemy.maxHp)) * 5)
     sfx('hit', 0.95 + Math.random() * 0.1, 0)
-    d.scene.enemy.hitFlash()
-    d.scene.enemy.shake()
-    d.scene.fx.impact(d.scene.enemy.targetWorld, color)
+    scene.enemy.hitFlash()
+    scene.enemy.shake(power)
+    scene.fx.impactFrame(hit, color, power * flash)
+    scene.fx.shake((0.55 + ev.heatAfter * 0.02) * shake, dur(240, sp))
+    scene.fx.aberration(0.9 * flash, dur(110, sp))
+    scene.fx.hitStop(dur(78, sp) / 1000)
+    scene.setZoom(1.028)
   }
 
+  // 히트스톱이 도는 동안 숫자가 올라간다 — 멈춘 화면 위에 결과가 얹힌다
   await showDamage(ev, d)
+  if (scene !== null) scene.setZoom(1)
   d.view.setHeat(ev.heatAfter)
   d.view.setEnemyHp(ev.enemyHpAfter, s.enemy.maxHp)
-  if (has3d(d.scene)) d.scene.gun.setHeat(ev.heatAfter)
+  if (scene !== null) scene.gun.setHeat(ev.heatAfter)
   await wait(70, sp)
 }
 
@@ -276,6 +294,10 @@ export async function playFireSequence(
         case 'enemyDead':
           sfx('kill')
           if (has3d(d.scene)) {
+            const at = d.scene.enemy.targetWorld.clone()
+            d.scene.fx.impactFrame(at, 0xffd0a0, 2.0 * d.flashIntensity())
+            d.scene.fx.impact(at, 0xff6a2a, 40)
+            d.scene.fx.hitStop(dur(140, sp) / 1000)
             d.scene.enemy.die()
             d.scene.setZoom(1.06)
           }

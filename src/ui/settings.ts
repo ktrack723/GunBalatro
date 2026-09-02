@@ -20,6 +20,8 @@ export interface Settings {
   bigText: boolean
   /** 효과음 (ZzFX 절차 생성) */
   sound: boolean
+  /** 배경 음악 (루프) */
+  music: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   colorblind: false,
   bigText: false,
   sound: true,
+  music: true,
 }
 
 /** 저장 레코드. 설정 외에 1회성 안내 플래그를 같이 들고 있다. */
@@ -81,6 +84,7 @@ function parseSettings(v: unknown): Settings {
     colorblind: pickBool(v['colorblind'], DEFAULT_SETTINGS.colorblind),
     bigText: pickBool(v['bigText'], DEFAULT_SETTINGS.bigText),
     sound: pickBool(v['sound'], DEFAULT_SETTINGS.sound),
+    music: pickBool(v['music'], DEFAULT_SETTINGS.music),
   }
 }
 

@@ -318,9 +318,14 @@ export class EnemyRig {
     this.hitT = 0
   }
 
-  /** 히트 리액션: 다리가 접히며 뒤로 밀린다 */
-  shake(): void {
-    for (const b of this.bodies) b.shake = 1
+  /**
+   * 피격 반응 — 몸이 뒤로 밀리고 다리가 버티며 접힌다.
+   * power 0.6(약) ~ 1.8(강). 히트스톱 동안 이 자세가 붙잡혀 있어야
+   * "맞았다" 가 한 장의 그림으로 읽힌다.
+   */
+  shake(power = 1): void {
+    const p = THREE.MathUtils.clamp(power, 0.2, 2)
+    for (const b of this.bodies) b.shake = Math.max(b.shake, p)
   }
 
   /** 처치 (§2.4) */
@@ -387,8 +392,10 @@ export class EnemyRig {
       this.mat.emissiveIntensity = 0.05 + burst * 2.6
       this.eyeMat.opacity = 0.95 * (1 - dieP)
     } else if (flash > 0) {
-      this.mat.emissive.setRGB(1, 1, 1)
-      this.mat.emissiveIntensity = flash * 1.8
+      // 완전 백색 1.8 은 착탄광과 겹쳐 크리처를 흰 덩어리로 지워 버렸다.
+      // 살짝 따뜻한 색으로 0.85 만 — '번쩍했다' 는 남고 형태는 안 사라진다.
+      this.mat.emissive.setRGB(1, 0.86, 0.72)
+      this.mat.emissiveIntensity = flash * 0.85
     } else {
       // 손전등 밖에서도 형체가 '있다'는 것만 느껴질 정도. 색은 거의 검정.
       this.mat.emissive.setRGB(0.05, 0.055, 0.075)
@@ -396,7 +403,7 @@ export class EnemyRig {
     }
 
     for (const b of this.bodies) {
-      if (b.shake > 0) b.shake = Math.max(0, b.shake - d / 0.14)
+      if (b.shake > 0) b.shake = Math.max(0, b.shake - d / 0.22)
     }
 
     this.writeMatrices(dieP)
@@ -419,11 +426,13 @@ export class EnemyRig {
 
       const bob = Math.sin(w * 2 + b.phase) * 0.030
       const swayX = Math.sin(w + b.phase) * 0.035
-      const back = b.shake * -0.10
       const sink = dieP > 0 ? -P.ride * 0.9 * dieP * dieP : 0
       const collapse = dieP > 0 ? dieP : 0
 
       const s = b.scale * (dieP > 0 ? 1 + Math.max(0, 1 - dieP / 0.2) * 0.06 : 1)
+      // 뒤로 밀림 + 위아래 눌림. 예전 −0.10 은 30m 밖에서 1픽셀도 안 움직였다.
+      const back = b.shake * -0.26 * s
+      const squash = b.shake * 0.16
       const bx = b.ox + swayX + tx
       const by = P.ride * s + bob + sink + ty
       const bz = this.z + b.oz + back
@@ -432,7 +441,11 @@ export class EnemyRig {
       this._p.set(bx, by, bz)
       this._e.set(0.05 + collapse * 0.5, b.yaw, tRoll + Math.sin(w + b.phase) * 0.04)
       this._q.setFromEuler(this._e)
-      this._s.set(s * P.wide, s * (1 - dieP * 0.3), s)
+      this._s.set(
+        s * P.wide * (1 + squash * 0.5),
+        s * (1 - dieP * 0.3) * (1 - squash),
+        s * (1 + squash * 0.3),
+      )
       this._m.compose(this._p, this._q, this._s)
       this.bodyMesh.setMatrixAt(i, this._m)
 
@@ -460,7 +473,8 @@ export class EnemyRig {
         this._e.set(
           0,
           b.yaw + (side > 0 ? splay : Math.PI - splay),
-          gait * 0.20 + legTrem * 1.6 - collapse * 1.25,
+          // 피격 시 다리가 버티며 아래로 꺾인다
+          gait * 0.20 + legTrem * 1.6 - collapse * 1.25 - b.shake * 0.42,
         )
         this._q.setFromEuler(this._e)
         const ls = s * P.legLen

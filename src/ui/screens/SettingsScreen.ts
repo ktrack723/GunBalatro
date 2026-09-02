@@ -15,6 +15,7 @@ import {
   prefersReducedMotion,
 } from '../settings'
 import { button, buttonRow, header, openScreen, section } from './LoadoutSheet'
+import { setMusicEnabled } from '../../audio/Music'
 
 interface Choice<T> {
   label: string
@@ -200,6 +201,20 @@ export function showSettings(host: HTMLElement): Promise<void> {
     (s) => s.sound,
     (v) => {
       patchSettings({ sound: v })
+    },
+  )
+
+  block<boolean>(
+    '배경 음악',
+    '루프로 흐른다. 첫 터치에서 재생이 시작된다(모바일 브라우저 정책).',
+    [
+      { label: '켬', value: true },
+      { label: '끔', value: false },
+    ],
+    (s) => s.music,
+    (v) => {
+      patchSettings({ music: v })
+      setMusicEnabled(v)
     },
   )
 

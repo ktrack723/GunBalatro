@@ -301,7 +301,12 @@ export class GameScene {
 
   // -------------------------------------------------------------------------
   update(dt: number): void {
-    const d = Math.min(dt, 0.05)
+    // raw = 캡 없는 실제 프레임 시간 (동결 카운트다운용, 폭주 방지로 0.25 만 막는다)
+    // real = 물리·애니메이션용 캡
+    const raw = Math.max(0, Math.min(dt, 0.25))
+    const real = Math.min(raw, 0.05)
+    // 히트스톱: 착탄 프레임을 붙잡는 동안 **월드 시간만** 멈춘다.
+    const d = this.fx.consumeFreeze(raw, real)
     this.t += d
 
     if (this.mode === 'travel') {

@@ -185,8 +185,8 @@ export class GameRenderer {
 
   render(dt: number): void {
     if (this.lost) return
-    const d = Math.min(Math.max(dt, 0), 0.05)
-    this.scene.update(d)
+    // 캡은 Scene 이 씌운다 — 히트스톱 카운트다운은 캡 없는 실제 시간이어야 한다
+    this.scene.update(Math.max(dt, 0))
     this.renderer.setRenderTarget(this.rt)
     // 1패스: 월드. 총은 layer 1 로 빼 두었으므로 여기서는 그려지지 않는다.
     this.scene.camera.layers.set(0)

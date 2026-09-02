@@ -36,6 +36,8 @@ void main() {
 const MAX_PARTICLES = 256
 const TRACER_POOL = 8
 const FLASH_POOL = 3
+const BULLET_POOL = 6
+const BURST_POOL = 3
 
 interface TracerSlot {
   mesh: THREE.Mesh
@@ -44,6 +46,32 @@ interface TracerSlot {
   to: THREE.Vector3
   t: number
   active: boolean
+}
+
+/**
+ * 날아가는 탄. 선(트레이서)이 아니라 **머리 + 짧은 꼬리**다.
+ * 선으로 그리면 "쐈다"만 남고 "맞았다"가 없다 — 착탄이 사건이 되어야 한다.
+ */
+interface BulletSlot {
+  head: THREE.Mesh
+  headMat: THREE.MeshBasicMaterial
+  trail: THREE.Mesh
+  trailMat: THREE.MeshBasicMaterial
+  from: THREE.Vector3
+  to: THREE.Vector3
+  t: number
+  dur: number
+  active: boolean
+}
+
+/** 착탄 임팩트 프레임 (별 모양 방사 스프라이트) */
+interface BurstSlot {
+  mesh: THREE.Mesh
+  mat: THREE.MeshBasicMaterial
+  t: number
+  dur: number
+  active: boolean
+  base: number
 }
 
 interface FlashSlot {
@@ -92,10 +120,56 @@ function makeFlashTexture(rng: ViewRng, size = 96): THREE.Texture {
   return tex
 }
 
+/**
+ * 착탄 임팩트용 절차 텍스처.
+ * 만화 연출의 '집중선' 을 그대로 가져왔다 — 중심 흰 코어 + 방사형 창.
+ * 총구 화염 텍스처(부드러운 불꽃)와 형태가 확실히 달라야 두 사건이 구분된다.
+ */
+function makeBurstTexture(rng: ViewRng, size = 128): THREE.Texture {
+  if (typeof document === 'undefined') return new THREE.Texture()
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = size
+  const g = cv.getContext('2d')
+  if (!g) return new THREE.Texture()
+  const c = size / 2
+  g.clearRect(0, 0, size, size)
+
+  // 방사형 창 — 길이가 제각각이라 '터졌다' 로 읽힌다
+  g.globalCompositeOperation = 'lighter'
+  const spikes = 12 + rng.int(6)
+  for (let i = 0; i < spikes; i++) {
+    const a = (i / spikes) * Math.PI * 2 + rng.range(-0.12, 0.12)
+    const len = c * rng.range(0.45, 1.0)
+    const w = rng.range(0.02, 0.075)
+    g.beginPath()
+    g.moveTo(c, c)
+    g.lineTo(c + Math.cos(a - w) * len * 0.35, c + Math.sin(a - w) * len * 0.35)
+    g.lineTo(c + Math.cos(a) * len, c + Math.sin(a) * len)
+    g.lineTo(c + Math.cos(a + w) * len * 0.35, c + Math.sin(a + w) * len * 0.35)
+    g.closePath()
+    g.fillStyle = 'rgba(255,255,255,0.9)'
+    g.fill()
+  }
+  // 중심 코어
+  const core = g.createRadialGradient(c, c, 0, c, c, c * 0.30)
+  core.addColorStop(0, 'rgba(255,255,255,1)')
+  core.addColorStop(0.5, 'rgba(255,240,210,0.75)')
+  core.addColorStop(1, 'rgba(255,200,140,0)')
+  g.fillStyle = core
+  g.fillRect(0, 0, size, size)
+
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.needsUpdate = true
+  return tex
+}
+
 export class Fx {
   readonly post = new PostPass()
-  /** 동적 광원 2개 중 하나 (다른 하나는 손전등). TECH.md §3 예산 준수 */
+  /** 총구 광원. 화면 오버레이 번쩍임 대신 **이것이 복도 전체를 실제로 밝힌다** */
   readonly muzzleLight: THREE.PointLight
+  /** 착탄 광원 — 맞은 지점에서 한 번 터진다 */
+  readonly hitLight: THREE.PointLight
 
   private readonly root: THREE.Scene
   private readonly rng: ViewRng = makeViewRng(0xfeed01)
@@ -126,8 +200,17 @@ export class Fx {
 
   // --- 풀 ---
   private readonly tracers: TracerSlot[] = []
+  private readonly bullets: BulletSlot[] = []
+  private readonly bursts: BurstSlot[] = []
   private readonly flashes: FlashSlot[] = []
   private muzzleT = 1
+  private hitT = 1
+  /**
+   * 히트스톱 잔여 시간(초). 0 보다 크면 월드 시간이 멈춘다.
+   * 착탄 프레임을 **붙잡아 두는** 장치다 — 애니메이션의 임팩트 프레임과 같은 원리로,
+   * 타격이 '지나간 일' 이 아니라 '지금 일어난 일' 로 읽히게 한다.
+   */
+  private freeze = 0
 
   // --- 파티클 ---
   private readonly pts: THREE.Points
@@ -150,6 +233,8 @@ export class Fx {
   private readonly _v2 = new THREE.Vector3()
   private readonly _m = new THREE.Matrix4()
   private readonly _q = new THREE.Quaternion()
+  /** 마지막 프레임의 카메라 위치 — 착탄광을 적 앞쪽으로 밀어내는 데 쓴다 */
+  private readonly _camPos = new THREE.Vector3()
   private readonly _ax = new THREE.Vector3()
   private readonly _ay = new THREE.Vector3()
   private readonly _az = new THREE.Vector3()
@@ -165,10 +250,24 @@ export class Fx {
       this.rng.range(0, 100),
     ]
 
-    // 머즐 점광 (PRESENTATION §2.2 t=20 강도 9 → t=100 소멸)
-    this.muzzleLight = new THREE.PointLight(0xffb15a, 0, 9, 1.7)
+    // 총구 점광.
+    //   예전에는 사거리 9m·감쇠 1.7 이라 총구 주변만 겨우 물들이고, 실제 '번쩍임' 은
+    //   화면 전체를 흰색으로 덮는 포스트 오버레이가 담당했다. 그건 조명이 아니라
+    //   눈속임이라 그림자도 원근도 없다.
+    //   이제 **진짜 광원**이 복도 끝까지 닿는다 — 벽·기물·적·총이 전부 한 순간
+    //   자기 자리에서 밝아지고, 거리에 따라 자연스럽게 어두워진다.
+    this.muzzleLight = new THREE.PointLight(0xffd7a0, 0, 70, 1.05)
     this.muzzleLight.castShadow = false
+    // 뷰모델(총)도 자기 발사광에 반응해야 한다 → 두 레이어 모두 비춘다
+    this.muzzleLight.layers.enableAll()
     root.add(this.muzzleLight)
+
+    // 착탄 점광 — 맞은 자리 **앞쪽**에서 한 번 터진다.
+    // 적 몸 한가운데 두면 거리 0 에서 광량이 발산해 실루엣이 흰 덩어리로 지워진다.
+    this.hitLight = new THREE.PointLight(0xffe0b0, 0, 22, 1.15)
+    this.hitLight.castShadow = false
+    this.hitLight.layers.enableAll()
+    root.add(this.hitLight)
 
     // 트레이서 풀
     const tGeo = new THREE.PlaneGeometry(1, 1)
@@ -196,6 +295,52 @@ export class Fx {
         t: 0,
         active: false,
       })
+    }
+
+    // 탄환 풀 — 머리(빌보드 점) + 짧은 꼬리(선분)
+    const bHeadGeo = new THREE.PlaneGeometry(1, 1)
+    const bTrailGeo = new THREE.PlaneGeometry(1, 1)
+    for (let i = 0; i < BULLET_POOL; i++) {
+      const headMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 1,
+        blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false,
+        toneMapped: false,
+      })
+      const trailMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 1,
+        blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false,
+        side: THREE.DoubleSide, toneMapped: false,
+      })
+      const head = new THREE.Mesh(bHeadGeo, headMat)
+      const trail = new THREE.Mesh(bTrailGeo, trailMat)
+      for (const m of [head, trail]) {
+        m.frustumCulled = false
+        m.visible = false
+        m.renderOrder = 22
+        this.group.add(m)
+      }
+      this.bullets.push({
+        head, headMat, trail, trailMat,
+        from: new THREE.Vector3(), to: new THREE.Vector3(),
+        t: 0, dur: 0.1, active: false,
+      })
+    }
+
+    // 임팩트 프레임 풀
+    const burstGeo = new THREE.PlaneGeometry(1, 1)
+    for (let i = 0; i < BURST_POOL; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: makeBurstTexture(this.rng),
+        color: 0xffffff, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+        toneMapped: false,
+      })
+      const mesh = new THREE.Mesh(burstGeo, mat)
+      mesh.frustumCulled = false
+      mesh.visible = false
+      mesh.renderOrder = 23
+      this.group.add(mesh)
+      this.bursts.push({ mesh, mat, t: 0, dur: 0.28, active: false, base: 1 })
     }
 
     // 머즐 플래시 풀 (3프레임 = 서로 다른 텍스처 3장. 머티리얼 재컴파일 회피)
@@ -319,9 +464,13 @@ export class Fx {
   // -------------------------------------------------------------------------
   // 연출 트리거
   // -------------------------------------------------------------------------
+  /**
+   * 발사 순간. **화면을 덮지 않고 씬을 실제로 밝힌다.**
+   * 접근성 '번쩍임 약하게' 는 이제 오버레이 α 가 아니라 이 광량을 줄인다.
+   */
   muzzleFlash(pos: THREE.Vector3): void {
     this.muzzleLight.position.copy(pos)
-    this.muzzleLight.intensity = 9 * (0.35 + 0.65 * this.flashI)
+    this.muzzleLight.intensity = 210 * (0.3 + 0.7 * this.flashI)
     this.muzzleT = 0
     const slot = this.flashes[this.rng.int(FLASH_POOL)]
     if (!slot) return
@@ -347,6 +496,108 @@ export class Fx {
     slot.mat.color.setHex(color)
     slot.mat.opacity = 1
     slot.mesh.visible = true
+  }
+
+  /**
+   * 날아가는 탄. seconds 동안 from → to 를 지나간다.
+   * 시퀀서는 같은 시간만큼 기다렸다가 착탄 연출을 낸다 — 눈에 보이는 비행과
+   * 실제 타격 타이밍이 어긋나면 "선 긋고 나서 숫자가 뜬다" 로 되돌아간다.
+   */
+  bullet(from: THREE.Vector3, to: THREE.Vector3, color: number, seconds: number): void {
+    let slot = this.bullets.find((b) => !b.active)
+    if (!slot) slot = this.bullets[0]
+    if (!slot) return
+    slot.active = true
+    slot.t = 0
+    slot.dur = Math.max(0.03, seconds)
+    slot.from.copy(from)
+    slot.to.copy(to)
+    slot.headMat.color.setHex(color)
+    slot.trailMat.color.setHex(color)
+    slot.head.visible = true
+    slot.trail.visible = true
+  }
+
+  /**
+   * 착탄 프레임 — 스파크 + 방사 스프라이트 + 점광.
+   * power 는 대략 0.6(약) ~ 1.8(강).
+   */
+  impactFrame(pos: THREE.Vector3, color: number, power = 1): void {
+    const p = THREE.MathUtils.clamp(power, 0.3, 2.2)
+
+    // 방사 스프라이트
+    let slot = this.bursts.find((b) => !b.active)
+    if (!slot) slot = this.bursts[0]
+    if (slot) {
+      slot.active = true
+      slot.t = 0
+      slot.dur = 0.21
+      // 임팩트 프레임은 **구두점**이지 커튼이 아니다. 크게 잡으면 적을 덮어
+      // 무엇이 맞았는지가 사라진다 (실측: 1.4m 스프라이트가 1.8m 크리처를 가렸다).
+      slot.base = (0.26 + 0.30 * p) * (0.5 + 0.5 * this.flashI)
+      slot.mat.color.setHex(color)
+      slot.mat.opacity = 1
+      slot.mesh.position.copy(pos)
+      slot.mesh.rotation.z = this.rng.range(0, Math.PI * 2)
+      slot.mesh.visible = true
+      slot.mesh.scale.setScalar(slot.base * 0.35)
+    }
+
+    // 점광 — 적에서 카메라 쪽으로 1.3m 밀어낸다.
+    //   맞은 지점 위에 두면 광량이 발산해 적이 흰 덩어리가 되고, 무엇이 맞았는지가
+    //   화면에서 사라진다. 앞으로 빼면 적의 앞면이 밝아지고 뒤쪽 복도가 대비로 남는다.
+    this._v0.subVectors(this._camPos, pos)
+    const len = this._v0.length()
+    if (len > 0.001) this._v0.multiplyScalar(1 / len)
+    else this._v0.set(0, 0, 1)
+    this.hitLight.position.copy(pos).addScaledVector(this._v0, 1.3)
+    this.hitLight.color.setHex(color)
+    this.hitLight.intensity = 26 * p * (0.3 + 0.7 * this.flashI)
+    this.hitT = 0
+
+    // 스파크 — 정면(카메라 쪽)으로 튀는 성분을 섞어 화면을 향해 터지게 한다
+    const c = new THREE.Color(color)
+    const white = new THREE.Color(0xfff2d8)
+    const n = Math.round(18 * p)
+    for (let i = 0; i < n; i++) {
+      this.emit(
+        pos,
+        this.rng.range(2.2, 7.5) * p,
+        i % 3 === 0 ? white : c,
+        this.rng.range(0.05, 0.115),
+        this.rng.range(0.20, 0.46),
+        -6.5,
+        2.6,
+      )
+    }
+  }
+
+  /**
+   * 히트스톱 — 월드 시간을 seconds 만큼 멈춘다.
+   * 착탄 프레임을 붙잡아 두는 장치다. 애니메이션에서 타격 순간에 같은 그림을
+   * 두세 프레임 유지하는 것과 같은 이유로, 이게 없으면 스파크가 스쳐 지나간다.
+   */
+  hitStop(seconds: number): void {
+    const v = Math.max(0, seconds) * (0.35 + 0.65 * this.shakeI)
+    if (v > this.freeze) this.freeze = v
+  }
+
+  /**
+   * 동결을 태우고 **월드가 쓸 dt** 를 돌려준다.
+   *
+   * rawDt 는 캡을 씌우지 않은 실제 프레임 시간이다. 물리용 dt(0.05 캡)로
+   * 태우면 프레임이 느린 기기에서 히트스톱이 벽시계 기준으로 늘어난다 —
+   * 실측 11fps 환경에서 0.8초 동결이 1.5초가 됐다. 정지 길이는 기기 성능이
+   * 아니라 연출이 정한다.
+   */
+  consumeFreeze(rawDt: number, cappedDt: number): number {
+    if (this.freeze <= 0) return cappedDt
+    this.freeze -= rawDt
+    if (this.freeze <= 0) {
+      this.freeze = 0
+      return cappedDt * 0.35 // 풀리는 순간은 살짝 슬로우로 이어 붙인다
+    }
+    return 0
   }
 
   /** 피격 스파크. §2.2 t=120 은 12개, 처치 연출(§2.4)은 40개로 호출한다 */
@@ -479,6 +730,7 @@ export class Fx {
   update(dt: number, camera: THREE.PerspectiveCamera): void {
     const d = Math.min(dt, 0.05)
     this.time += d
+    this._camPos.copy(camera.position)
 
     // --- 화면 효과 감쇠 ---
     this.flash *= Math.exp(-d / this.flashTau)
@@ -500,10 +752,98 @@ export class Fx {
       if (this.muzzleT >= 1) this.muzzleLight.intensity = 0
     }
 
+    // --- 착탄 라이트 ---
+    if (this.hitT < 1) {
+      this.hitT = Math.min(1, this.hitT + d / 0.16)
+      this.hitLight.intensity *= Math.exp(-d / 0.045)
+      if (this.hitT >= 1) this.hitLight.intensity = 0
+    }
+
     this.updateFlashes(d, camera)
+    this.updateBullets(d, camera)
+    this.updateBursts(d, camera)
     this.updateTracers(d, camera)
     this.updateParticles(d)
     this.applyCamera(d, camera)
+  }
+
+  private updateBullets(d: number, camera: THREE.PerspectiveCamera): void {
+    for (const b of this.bullets) {
+      if (!b.active) continue
+      b.t += d
+      const p = b.t / b.dur
+      if (p >= 1.12) {
+        b.active = false
+        b.head.visible = false
+        b.trail.visible = false
+        continue
+      }
+      const dir = this._v0.subVectors(b.to, b.from)
+      const full = dir.length()
+      if (full < 1e-4) {
+        b.active = false
+        b.head.visible = false
+        b.trail.visible = false
+        continue
+      }
+      dir.multiplyScalar(1 / full)
+      const travelled = Math.min(1, p) * full
+      const head = this._v1.copy(b.from).addScaledVector(dir, travelled)
+      // 착탄 후에는 머리를 지우고 꼬리만 잠깐 남긴다
+      const done = p >= 1
+      const fade = done ? 1 - Math.min(1, (p - 1) / 0.12) : 1
+
+      b.headMat.opacity = done ? 0 : 1
+      b.head.visible = !done
+      if (!done) {
+        b.head.position.copy(head)
+        b.head.quaternion.copy(camera.quaternion)
+        const dist = this._v2.copy(camera.position).sub(head).length()
+        b.head.scale.setScalar(Math.min(0.13, 0.018 + dist * 0.0045))
+      }
+
+      // 꼬리 — 짧다. 선이 아니라 '흔적' 이어야 한다.
+      const trailLen = Math.min(full * 0.20, Math.max(0.30, full * 0.09))
+      const back = Math.min(travelled, trailLen)
+      if (back < 1e-3) {
+        b.trail.visible = false
+        continue
+      }
+      const mid = this._v2.copy(head).addScaledVector(dir, -back * 0.5)
+      const toCam = this._ax.copy(camera.position).sub(mid).normalize()
+      const yAxis = this._ay.crossVectors(toCam, dir)
+      if (yAxis.lengthSq() < 1e-8) yAxis.set(0, 1, 0)
+      yAxis.normalize()
+      const zAxis = this._az.crossVectors(dir, yAxis)
+      this._m.makeBasis(this._v0.copy(dir), yAxis, zAxis)
+      this._q.setFromRotationMatrix(this._m)
+      b.trail.visible = true
+      b.trail.quaternion.copy(this._q)
+      b.trail.position.copy(mid)
+      b.trail.scale.set(back, Math.min(0.034, 0.011 + full * 0.0009), 1)
+      b.trailMat.opacity = 0.85 * fade
+    }
+  }
+
+  private updateBursts(d: number, camera: THREE.PerspectiveCamera): void {
+    for (const b of this.bursts) {
+      if (!b.active) continue
+      b.t += d
+      const p = b.t / b.dur
+      if (p >= 1) {
+        b.active = false
+        b.mesh.visible = false
+        continue
+      }
+      // 앞부분은 급팽창, 뒤는 천천히 사라진다 (임팩트 프레임의 리듬)
+      const grow = p < 0.22 ? p / 0.22 : 1
+      const ease = 1 - Math.pow(1 - grow, 3)
+      const roll = b.mesh.rotation.z
+      b.mesh.quaternion.copy(camera.quaternion)
+      b.mesh.rotateZ(roll + p * 0.35)
+      b.mesh.scale.setScalar(b.base * (0.35 + ease * 0.75))
+      b.mat.opacity = p < 0.22 ? 1 : 1 - (p - 0.22) / 0.78
+    }
   }
 
   private updateFlashes(d: number, camera: THREE.PerspectiveCamera): void {
@@ -634,6 +974,17 @@ export class Fx {
       t.mat.dispose()
       t.mesh.geometry.dispose()
     }
+    for (const b of this.bullets) {
+      b.headMat.dispose()
+      b.trailMat.dispose()
+      b.head.geometry.dispose()
+      b.trail.geometry.dispose()
+    }
+    for (const b of this.bursts) {
+      b.mat.map?.dispose()
+      b.mat.dispose()
+      b.mesh.geometry.dispose()
+    }
     for (const f of this.flashes) {
       f.mat.map?.dispose()
       f.mat.dispose()
@@ -644,5 +995,6 @@ export class Fx {
     this.post.dispose()
     this.root.remove(this.group)
     this.root.remove(this.muzzleLight)
+    this.root.remove(this.hitLight)
   }
 }

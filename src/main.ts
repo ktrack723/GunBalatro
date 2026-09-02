@@ -1,11 +1,12 @@
 import { sfx, unlockSfx } from './audio/Sfx'
+import { pauseMusic, resumeMusic, startMusic } from './audio/Music'
 // ============================================================================
 // main.ts — 부팅 · rAF 루프 · iOS Safari 대응 (TECH.md §4)
 //   앱 상태기계는 app/App.ts 가 갖는다. 여기서는 "돌아가게 만드는 배선"만 한다.
 // ============================================================================
 import { GameRenderer } from './view3d/Renderer'
 import { App, type AudioHook } from './app/App'
-import { initSettings } from './ui/settings'
+import { initSettings, loadSettings } from './ui/settings'
 import { mountToasts, toast } from './ui/toast'
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,8 @@ class Audio implements AudioHook {
 
   resume(): void {
     unlockSfx()
+    // 음악도 같은 제스처 안에서 시작해야 한다 (iOS 자동재생 정책)
+    if (loadSettings().music) startMusic()
     type Ctor = new () => AudioContext
     const w = window as unknown as { AudioContext?: Ctor; webkitAudioContext?: Ctor }
     const Ctx = w.AudioContext ?? w.webkitAudioContext
@@ -162,12 +165,17 @@ let last = performance.now()
 
 function frame(now: number): void {
   raf = requestAnimationFrame(frame)
-  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000))
+  // raw 는 캡을 씌우지 않은 실제 프레임 시간이다.
+  // 게임 로직에는 0.05 캡을 씌우지만(탭 복귀 후 거대한 한 걸음 방지),
+  // 렌더러에는 raw 를 넘긴다 — 히트스톱 길이는 기기 성능이 아니라 연출이 정해야
+  // 하고, 캡 씌운 dt 로 태우면 느린 기기에서 정지가 그만큼 늘어난다.
+  const raw = Math.max(0, (now - last) / 1000)
+  const dt = Math.min(0.05, raw)
   last = now
   game.frame(dt)
   if (renderer !== null) {
     renderer.autoQualityTick(dt)
-    renderer.render(dt)
+    renderer.render(raw)
   }
 }
 
@@ -188,13 +196,16 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     stop()
     game.onHidden()
+    pauseMusic()
   } else {
     start()
+    resumeMusic()
   }
 })
 window.addEventListener('pagehide', () => {
   stop()
   game.onHidden()
+  pauseMusic()
 })
 
 // --- 개발용 핸들 (#dev 일 때만) ---------------------------------------------
