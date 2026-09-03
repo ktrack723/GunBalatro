@@ -73,7 +73,9 @@ const MAG_HOME = new THREE.Vector3(0, -0.105, -0.178)
  * 탄창은 총 아래에 있어서, 카메라가 뒤에서 보는 구도에서는 몸체에 가린다.
  * 옆으로 빼야 삽탄이 실제로 보인다.
  */
-const MAG_PRESENT = new THREE.Vector3(-0.165, -0.020, -0.255)
+// 총을 안쪽으로 눕히는 검사 자세가 들어온 뒤로 −0.165 로는 몸체에 다시 가렸다.
+// 더 왼쪽·앞으로 빼서 탄창 전체와 삽탄이 보이게 한다.
+const MAG_PRESENT = new THREE.Vector3(-0.355, 0.010, -0.315)
 const ROUND_GEO = new THREE.CylinderGeometry(0.0115, 0.0115, 0.052, 8, 1, false)
 ROUND_GEO.rotateX(Math.PI / 2)
 

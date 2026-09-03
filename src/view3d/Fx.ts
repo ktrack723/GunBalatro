@@ -307,7 +307,7 @@ export class Fx {
     //   눈속임이라 그림자도 원근도 없다.
     //   이제 **진짜 광원**이 복도 끝까지 닿는다 — 벽·기물·적·총이 전부 한 순간
     //   자기 자리에서 밝아지고, 거리에 따라 자연스럽게 어두워진다.
-    this.muzzleLight = new THREE.PointLight(0xffd7a0, 0, 70, 1.05)
+    this.muzzleLight = new THREE.PointLight(0xffe6c0, 0, 150, 0.85)
     this.muzzleLight.castShadow = false
     // 뷰모델(총)도 자기 발사광에 반응해야 한다 → 두 레이어 모두 비춘다
     this.muzzleLight.layers.enableAll()
@@ -315,7 +315,7 @@ export class Fx {
 
     // 착탄 점광 — 맞은 자리 **앞쪽**에서 한 번 터진다.
     // 적 몸 한가운데 두면 거리 0 에서 광량이 발산해 실루엣이 흰 덩어리로 지워진다.
-    this.hitLight = new THREE.PointLight(0xffe0b0, 0, 22, 1.15)
+    this.hitLight = new THREE.PointLight(0xffe0b0, 0, 40, 0.95)
     this.hitLight.castShadow = false
     this.hitLight.layers.enableAll()
     root.add(this.hitLight)
@@ -526,20 +526,16 @@ export class Fx {
    * 발사 순간. **화면을 덮지 않고 씬을 실제로 밝힌다.**
    * 접근성 '번쩍임 약하게' 는 이제 오버레이 α 가 아니라 이 광량을 줄인다.
    */
+  /**
+   * 발사광. **화염 스프라이트는 더 이상 그리지 않는다** — 총구에 그림을 붙이는 대신
+   * 진짜 점광 하나로만 표현한다. 대신 그 광원이 복도를 통째로 태울 만큼 세다:
+   * 벽·기물·적이 각자의 거리만큼 밝아지므로 "어디서 빛이 났는지" 가 화면에 남는다.
+   * (스프라이트 풀은 남아 있지만 호출부가 없다.)
+   */
   muzzleFlash(pos: THREE.Vector3): void {
     this.muzzleLight.position.copy(pos)
-    this.muzzleLight.intensity = 210 * (0.3 + 0.7 * this.flashI)
+    this.muzzleLight.intensity = 1500 * (0.3 + 0.7 * this.flashI)
     this.muzzleT = 0
-    const slot = this.flashes[this.rng.int(FLASH_POOL)]
-    if (!slot) return
-    slot.active = true
-    slot.t = 0
-    slot.baseScale = this.rng.range(0.30, 0.42)
-    slot.mesh.position.copy(pos)
-    slot.mesh.rotation.z = this.rng.range(0, Math.PI * 2)
-    slot.mesh.visible = true
-    slot.mesh.scale.setScalar(slot.baseScale)
-    slot.mat.opacity = 1
   }
 
   /** 총구 → 흉부. 90ms 동안 길이 0→100%, 이후 60ms 페이드 (§2.2) */
@@ -587,9 +583,23 @@ export class Fx {
   impactFrame(pos: THREE.Vector3, color: number, power = 1): void {
     const p = THREE.MathUtils.clamp(power, 0.3, 2.2)
 
-    // 방사 스프라이트는 **쓰지 않는다.** 착탄에서 보여야 하는 건 '탄이 박혔다' 는
-    // 파편뿐이다 — 원판이 겹치면 그게 먼저 읽혀서 적이 가려진다.
-    // (bursts 풀은 처치 연출이 계속 쓴다.)
+    // 큰 타격 이펙트 — 착탄점에서 터지는 방사광. 총구 화염을 지운 지금은
+    // **여기가 화면에서 제일 밝은 한 점**이어야 한다. 짧게(0.16초) 터뜨려
+    // 적을 가리는 커튼이 아니라 '박혔다' 는 순간의 섬광으로 읽히게 한다.
+    let slot = this.bursts.find((b) => !b.active)
+    if (!slot) slot = this.bursts[0]
+    if (slot) {
+      slot.active = true
+      slot.t = 0
+      slot.dur = 0.16
+      slot.base = (0.85 + 1.05 * p) * (0.5 + 0.5 * this.flashI)
+      slot.mat.color.setHex(color)
+      slot.mat.opacity = 1
+      slot.mesh.position.copy(pos)
+      slot.mesh.rotation.z = this.rng.range(0, Math.PI * 2)
+      slot.mesh.visible = true
+      slot.mesh.scale.setScalar(slot.base * 0.3)
+    }
 
     // 점광 — 적에서 카메라 쪽으로 1.3m 밀어낸다.
     //   맞은 지점 위에 두면 광량이 발산해 적이 흰 덩어리가 되고, 무엇이 맞았는지가
@@ -600,7 +610,7 @@ export class Fx {
     else this._v0.set(0, 0, 1)
     this.hitLight.position.copy(pos).addScaledVector(this._v0, 1.3)
     this.hitLight.color.setHex(color)
-    this.hitLight.intensity = 20 * p * (0.3 + 0.7 * this.flashI)
+    this.hitLight.intensity = 130 * p * (0.3 + 0.7 * this.flashI)
     this.hitT = 0
 
     // 스파크 — 정면(카메라 쪽)으로 튀는 성분을 섞어 화면을 향해 터지게 한다
@@ -630,6 +640,11 @@ export class Fx {
    * 히트스톱 — 월드 시간을 seconds 만큼 멈춘다.
    * 착탄 프레임을 붙잡아 두는 장치다. 애니메이션에서 타격 순간에 같은 그림을
    * 두세 프레임 유지하는 것과 같은 이유로, 이게 없으면 스파크가 스쳐 지나간다.
+   */
+  /**
+   * @deprecated 애니식 프레임 정지는 걷어냈다 (호출부 없음).
+   * 시퀀서의 대기는 실시간 타이머라, 이 정지를 빼도 **템포는 그대로다** —
+   * 멈추던 것은 월드 애니메이션뿐이었다.
    */
   hitStop(seconds: number): void {
     const v = Math.max(0, seconds) * (0.35 + 0.65 * this.shakeI)
@@ -802,7 +817,7 @@ export class Fx {
     // --- 머즐 라이트 ---
     if (this.muzzleT < 1) {
       this.muzzleT = Math.min(1, this.muzzleT + d / 0.1)
-      this.muzzleLight.intensity *= Math.exp(-d / 0.028)
+      this.muzzleLight.intensity *= Math.exp(-d / 0.040)
       if (this.muzzleT >= 1) this.muzzleLight.intensity = 0
     }
 

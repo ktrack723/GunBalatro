@@ -182,7 +182,7 @@ async function playShot(
     scene.fx.impactFrame(hit, color, power * flash)
     scene.fx.shake((0.55 + ev.heatAfter * 0.02) * shake, dur(240, sp))
     scene.fx.aberration(0.9 * flash, dur(110, sp))
-    scene.fx.hitStop(dur(78, sp) / 1000)
+    // 프레임 정지 없음. 시퀀서의 대기는 실시간이라 템포는 그대로다.
     scene.setZoom(1.028)
   }
 
@@ -318,7 +318,6 @@ export async function playFireSequence(
             const at = d.scene.enemy.targetWorld.clone()
             d.scene.fx.impactFrame(at, 0xffd0a0, 2.0 * d.flashIntensity())
             d.scene.fx.impact(at, 0xff6a2a, 40)
-            d.scene.fx.hitStop(dur(140, sp) / 1000)
             d.scene.enemy.die()
             d.scene.setZoom(1.06)
           }
