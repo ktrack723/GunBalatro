@@ -67,6 +67,10 @@ const HALF_PI = Math.PI / 2
  * 용량에 따라 탄창 길이가 달라지므로, 중심이 아니라 위쪽 끝을 고정해야
  * 어떤 용량이든 수신부 아래에 정확히 물린다.
  */
+/** 화면에 동시에 떠 있을 수 있는 탄피 수 (한 탄창 최대 12발이라 넉넉하다) */
+const CASING_POOL = 10
+const CASING_LIFE = 0.85
+
 const MAG_HOME = new THREE.Vector3(0, -0.105, -0.178)
 /**
  * 탄창 '제시' 자세 — 총 **왼쪽 옆**으로 빼낸다.
@@ -317,6 +321,21 @@ export class GunRig {
     this.recoilNode.add(this.parts)
     this.sway.add(this.recoilNode)
     this.object.add(this.sway)
+
+    // --- 탄피 배출 ---------------------------------------------------------
+    //   총 자체(sway/recoil)에는 붙이지 않는다. 배출된 탄피는 총과 함께 흔들리는
+    //   부품이 아니라 **떨어져 나간 물체**다 — 뷰모델 공간(object)에 두고 자체
+    //   물리로 날린다. 레이어 1 을 직접 박아 둔다: Scene 은 생성 시점에 한 번만
+    //   traverse 로 레이어를 칠하므로, 나중에 만든 메시는 칠해지지 않는다.
+    const caseGeo = cyl(0.0105, 0.0105, 0.036, 6, 0, 0, 0, 0, 0, HALF_PI)
+    for (let i = 0; i < CASING_POOL; i += 1) {
+      const m = new THREE.Mesh(caseGeo, this.brassMat)
+      m.visible = false
+      m.frustumCulled = false
+      m.layers.set(1)
+      this.object.add(m)
+      this.casings.push({ mesh: m, vel: new THREE.Vector3(), spin: new THREE.Vector3(), t: -1 })
+    }
     // 자연스러운 파지 각도
     this.parts.rotation.set(-0.018, 0.030, 0.048)
     this.applyHeatMaterial(1, 0)
@@ -395,6 +414,54 @@ export class GunRig {
 
   private inspectCant = 0
 
+  /** 배출된 탄피 (뷰모델 공간에서 자체 물리로 난다) */
+  private readonly casings: Array<{
+    mesh: THREE.Mesh
+    vel: THREE.Vector3
+    spin: THREE.Vector3
+    t: number
+  }> = []
+
+  /**
+   * 탄피를 한 발 배출한다. 오른쪽 위·뒤로 튀어 나가 돌면서 떨어진다.
+   * 배출구는 노리쇠 오른쪽(x +0.075) 이다.
+   */
+  ejectCasing(): void {
+    const slot = this.casings.find((c) => c.t < 0) ?? this.casings[0]
+    if (slot === undefined) return
+    slot.t = 0
+    slot.mesh.position.set(0.075, -0.012, -0.232)
+    slot.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3)
+    slot.mesh.visible = true
+    slot.mesh.scale.setScalar(1)
+    slot.vel.set(0.86 + Math.random() * 0.34, 0.70 + Math.random() * 0.26, 0.34 + Math.random() * 0.24)
+    slot.spin.set(
+      (Math.random() - 0.5) * 26,
+      (Math.random() - 0.5) * 22,
+      (Math.random() - 0.5) * 30,
+    )
+  }
+
+  private updateCasings(d: number): void {
+    for (const c of this.casings) {
+      if (c.t < 0) continue
+      c.t += d
+      if (c.t > CASING_LIFE) {
+        c.t = -1
+        c.mesh.visible = false
+        continue
+      }
+      c.vel.y -= 2.6 * d // 뷰모델 공간이라 중력도 '보기 좋은' 값으로 줄인다
+      c.mesh.position.addScaledVector(c.vel, d)
+      c.mesh.rotation.x += c.spin.x * d
+      c.mesh.rotation.y += c.spin.y * d
+      c.mesh.rotation.z += c.spin.z * d
+      // 마지막 25% 는 줄여서 사라지게 (알파 없이도 자연스럽게 빠진다)
+      const k = c.t / CASING_LIFE
+      if (k > 0.75) c.mesh.scale.setScalar(Math.max(0.01, 1 - (k - 0.75) / 0.25))
+    }
+  }
+
   /** 노리쇠 후퇴 고정 (탄창 종료, §2.3 t=0) */
   boltBack(): void {
     this.boltLocked = true
@@ -427,6 +494,7 @@ export class GunRig {
     this.t += d
 
     this.updateReload(d)
+    this.updateCasings(d)
 
     // --- 반동 스프링 (임계 감쇠에 가깝게) ---
     const k = 460, c = 27

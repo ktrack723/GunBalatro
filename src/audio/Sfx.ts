@@ -81,6 +81,8 @@ export function unlockSfx(): void {
   void ensure().then(() => {
     const ctx = mod?.ZZFX.audioContext
     if (ctx !== undefined && ctx.state === 'suspended') void ctx.resume()
+    // 첫 발이 합성음으로 나가지 않게 여기서 미리 디코딩한다
+    if (fireLoading === null) fireLoading = loadFire()
   })
 }
 
@@ -117,9 +119,69 @@ export function sfx(id: SfxId, rate = 1, throttleMs = 25): void {
   }
 }
 
-/** 온도 단계(0~3)에 맞는 발사음 */
+// ---------------------------------------------------------------------------
+// 발사음 — 녹음 샘플 (public/sfx/fire.wav)
+//   합성음(zzfx)은 폴백으로 남겨 둔다. 샘플이 아직 안 읽혔거나 디코딩에 실패하면
+//   소리가 아예 없는 것보다 합성음이 낫다.
+//   원본에는 선행 무음 0.173초가 있어서 그대로 쓰면 총성이 화면보다 늦는다 —
+//   에셋 단계에서 잘라 냈다 (모노 48kHz, 1.04초).
+// ---------------------------------------------------------------------------
+const FIRE_SRC = 'sfx/fire.wav'
+let fireBuf: AudioBuffer | null = null
+let fireLoading: Promise<void> | null = null
+
+function audioCtx(): AudioContext | null {
+  const ctx = mod?.ZZFX.audioContext
+  return ctx ?? null
+}
+
+function baseUrl(): string {
+  const b = import.meta.env.BASE_URL
+  return typeof b === 'string' && b.length > 0 ? b : '/'
+}
+
+async function loadFire(): Promise<void> {
+  const ctx = audioCtx()
+  if (ctx === null || fireBuf !== null) return
+  try {
+    const res = await fetch(baseUrl() + FIRE_SRC)
+    const raw = await res.arrayBuffer()
+    fireBuf = await ctx.decodeAudioData(raw)
+  } catch (e) {
+    console.warn('[sfx] 발사음 로드 실패 — 합성음으로 대체한다', e)
+  }
+}
+
+/** 샘플 한 방. 겹쳐 쏴도 서로 자르지 않게 매번 새 소스를 만든다. */
+function playFire(rate: number, gain: number): boolean {
+  const ctx = audioCtx()
+  if (ctx === null || fireBuf === null) return false
+  try {
+    const src = ctx.createBufferSource()
+    src.buffer = fireBuf
+    src.playbackRate.value = rate
+    const g = ctx.createGain()
+    g.gain.value = master * gain
+    src.connect(g).connect(ctx.destination)
+    src.start()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 온도 단계(0~3)에 맞는 발사음.
+ * 뜨거울수록 재생 속도를 낮춰 총성이 굵고 늘어지게 한다 — 합성음 시절의 단계별
+ * 주파수 하강(420→190Hz)을 샘플에서도 같은 방향으로 흉내 낸다.
+ */
 export function sfxShot(heat: number): void {
+  if (!enabled) return
   const tier = heat >= 30 ? 3 : heat >= 16 ? 2 : heat >= 8 ? 1 : 0
+  const rate = [1.06, 0.98, 0.91, 0.84][tier]! * (0.98 + Math.random() * 0.04)
+  if (playFire(rate, [0.85, 0.92, 1.0, 1.08][tier]!)) return
+  // 폴백 — 샘플이 아직 없다
+  if (fireLoading === null && mod !== null) fireLoading = loadFire()
   const ids: SfxId[] = ['shot0', 'shot1', 'shot2', 'shot3']
   sfx(ids[tier], 0.94 + Math.random() * 0.12, 0)
 }

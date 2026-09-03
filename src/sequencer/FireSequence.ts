@@ -162,8 +162,10 @@ async function playShot(
     flightMs = Math.round(Math.min(96, Math.max(50, 44 + scene.enemy.targetWorld.distanceTo(from) * 1.6)))
     scene.fx.muzzleFlash(from)
     scene.gun.kick(1.0 + Math.min(1.2, ev.heatAfter / 24))
-    // 발사 자체의 흔들림은 작게. 큰 흔들림은 착탄에 몰아준다.
-    scene.fx.shake(0.22 * shake, dur(120, sp))
+    scene.gun.ejectCasing()
+    // 화면 흔들림은 **반동과 같은 프레임**에 온다. 총이 튀는데 화면이 가만히
+    //   있으면 반동이 총만의 일이 된다 — 짧고 세게 흔들어 손에 붙인다.
+    scene.fx.shake((0.85 + Math.min(0.5, ev.heatAfter / 60)) * shake, dur(190, sp))
   }
   d.haptic('heavy')
 
