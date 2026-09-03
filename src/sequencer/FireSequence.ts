@@ -78,6 +78,11 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   //   탄창을 비우면 노리쇠는 그 자리에서 후퇴 고정된다(§2.3 magEnd). 그러니 재장전은
   //   노리쇠를 다시 당기는 데서 시작하지 않는다 — 이미 뒤에 있다.
   //   순서: 들어올리고 → 탄창을 빼고 → 삽탄하고 → 탄창을 물리고 → 노리쇠를 놓고 → 조준한다.
+  //
+  //   **총이 보는 방향도 동작을 따라간다.** 탄창은 총 왼쪽에서 빠지고 장전손잡이는
+  //   오른쪽에 있다 — 한 방향으로 고정하면 둘 중 하나는 총몸 뒤에 숨는다.
+  //   왼쪽(탄창 해제·삽탄) → 정면(탄창 장착) → 오른쪽(노리쇠 전진) 으로 돌려 세운다.
+  //   회전과 그 자리에서 하는 동작은 **겹치지 않는다**: 다 돌고 나서 움직인다.
   const step = async (
     text: string,
     ms: number,
@@ -92,13 +97,13 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   // 노리쇠는 마지막 탄을 쏜 그대로 **후퇴 고정** 상태다. 눈에 보이게 못 박아 둔다.
   gun.setChargingHandle(1)
 
-  // ① 총을 카메라 앞으로 들어올린다
+  // ① 총을 카메라 앞으로 들어올리면서 **왼쪽**으로 돌린다 — 탄창이 빠지는 면이다
   sfx('poseUp', 1, 0)
-  await step('총을 든다', 260, (t) => {
+  await step('총을 든다', 300, (t) => {
     scene.setInspect(t)
-    scene.gun.setInspectCant(t)
+    scene.gun.setCant(-t)
   }, easeOut)
-  await wait(70, sp)
+  await wait(90, sp)
 
   // ② 탄창 해제 — 멈치를 누르고, 탄창이 빠진다
   sfx('magRelease', 1, 0)
@@ -119,15 +124,21 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   }
   await wait(90, sp)
 
-  // ④ 탄창 장착
+  // ④ 탄창 장착 — 먼저 **정면**으로 되돌리고, 다 돌고 나서 물린다
+  await step('탄창 장착', 220, (t) => gun.setCant(-1 + t), easeOut)
+  gun.setCant(0)
+  await wait(90, sp)
   sfx('magIn', 1, 0)
   d.haptic('heavy')
   await step('탄창 장착', 230, (t) => gun.setMagSeat(t), easeIn)
   await wait(150, sp)
 
-  // ⑤ 노리쇠 전진 — 놓으면 약실에 문다.
-  //   여기서 재장전이 '끝났다' 는 신호가 나므로 **완결에 시간을 준다**: 전진 자체를
-  //   길게 끌고, 물린 뒤에도 한 박자 머문 다음에야 다음 동작으로 넘어간다.
+  // ⑤ 노리쇠 전진 — 손잡이가 있는 **오른쪽**으로 마저 돌리고, 회전이 끝난 다음에
+  //   놓아 약실에 문다. 여기서 재장전이 '끝났다' 는 신호가 나므로 **완결에 시간을
+  //   준다**: 전진 자체를 길게 끌고, 물린 뒤에도 한 박자 머문 다음에 넘어간다.
+  await step('노리쇠 전진', 220, (t) => gun.setCant(t), easeOut)
+  gun.setCant(1)
+  await wait(110, sp)
   sfx('boltFwd', 1, 0)
   d.haptic('heavy')
   await step('노리쇠 전진', 240, (t) => gun.setChargingHandle(1 - t), easeIn)
@@ -137,13 +148,13 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
 
   // ⑥ 노리쇠가 돌아온 **다음에** 조준선을 정렬한다
   sfx('aimUp', 1, 0)
-  await step('조준', 240, (t) => {
+  await step('조준', 260, (t) => {
     scene.setInspect(1 - t)
-    scene.gun.setInspectCant(1 - t)
+    scene.gun.setCant(1 - t)
     scene.setAim(t)
   }, easeOut)
   scene.setInspect(0)
-  scene.gun.setInspectCant(0)
+  scene.gun.setCant(0)
   scene.setAim(1)
   caption.remove()
   await wait(90, sp)

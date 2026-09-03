@@ -483,13 +483,14 @@ export class GunRig {
   }
 
   /**
-   * 재장전 검사 자세 (0=사격 자세, 1=완전히 눕힘).
-   *   예전에는 총을 **적 쪽으로 겨눈 채** 장전손잡이를 당겼다 — 총열이 카메라 정면을
-   *   향하고 있어서 손잡이가 뒤에 가려 보이지도 않았다. 실총처럼 총을 안쪽으로 눕혀
-   *   오른쪽(장전손잡이 쪽)을 플레이어에게 보이고, 총구는 옆으로 치운다.
+   * 재장전 중 총을 어느 쪽으로 돌릴지. **-1 = 왼쪽, 0 = 정면, +1 = 오른쪽.**
+   *   동작마다 봐야 할 면이 다르다 — 탄창은 총 **왼쪽**에서 빠지고, 장전손잡이는
+   *   **오른쪽**에 있다. 한 방향으로 고정해 두면 둘 중 하나는 총몸에 가려진다.
+   *   그래서 시퀀서가 단계마다 이 값을 돌려 가며 볼 면을 카메라로 내민다.
+   *   (+1 일 때 총구가 오른쪽으로 가고 오른쪽 면이 카메라를 본다.)
    */
-  setInspectCant(t: number): void {
-    this.inspectCant = THREE.MathUtils.clamp(t, 0, 1)
+  setCant(a: number): void {
+    this.inspectCant = THREE.MathUtils.clamp(a, -1, 1)
   }
 
   private inspectCant = 0
@@ -594,7 +595,7 @@ export class GunRig {
     this.kickX += this.kickVX * d
     this.kickVZ += (-k * this.kickZ - c * this.kickVZ) * d
     this.kickZ += this.kickVZ * d
-    // 검사 자세 — 요(yaw) 로 오른쪽 면을 카메라로 돌리고, 롤로 눕힌다.
+    // 검사 자세 — 요(yaw) 로 볼 면을 카메라로 돌리고, 롤로 눕힌다. 부호가 방향이다.
     //   반동은 rotation.x / position.y·z 만 쓰므로 여기서 y·z·x 를 써도 겹치지 않는다.
     const cant = this.inspectCant
     this.recoilNode.rotation.y = -0.62 * cant
@@ -736,13 +737,16 @@ export class GunRig {
     }
   }
 
-  /** 총을 옆으로 돌려 눕히는 '들여다보기' 자세. 재장전 내내 유지된다 */
+  /**
+   * 탄창을 빼 들 때의 몸통 기울임. **요(yaw) 는 여기서 건드리지 않는다** —
+   * 총이 어느 쪽을 보는지는 setCant 하나가 정해야 단계마다 돌려 세울 수 있다.
+   * (예전에는 여기서 +0.38 을 더해 좌우가 서로 상쇄됐다.)
+   */
   private setGunPose(p: number): void {
     const q = THREE.MathUtils.clamp(p, 0, 1)
     this.posePresent = q
     this.parts.position.y = -0.055 * q
     this.parts.rotation.x = -0.018 + 0.13 * q
-    this.parts.rotation.y = 0.38 * q
   }
 
   /** 탄창 위치. 0 = 총에 물린 상태, 1 = 총 왼쪽으로 빼낸 제시 자세 */
