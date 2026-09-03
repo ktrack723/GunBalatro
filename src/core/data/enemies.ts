@@ -189,19 +189,23 @@ const SEALED: EnemyPassive = {
   modifyDamage: (d, c) => (c.round.special !== null ? Math.round(d * 0.7) : d),
 }
 
-/** 특수탄 재고 압박 — 장기전을 벌하고 속공을 강요한다 */
+/**
+ * 특수탄 재고 압박 — 장기전을 벌하고 속공을 강요한다.
+ *   3발은 과했다. 특수탄은 한 전투에서 많아야 서너 발 쓰는 자원인데, 탄창을
+ *   한 번 비울 때마다 그만큼이 통째로 증발하면 '속공을 강요' 가 아니라 재고가
+ *   두 탄창 만에 0 이 된다 — 선택지 자체가 사라지니 저울질할 것이 없어진다.
+ *   한 발이면 압박은 그대로 남으면서 아껴 쓸 여지가 생긴다.
+ */
 const DEVOUR: EnemyPassive = {
   id: 'devour',
   name: '탐식',
-  text: '사격을 마칠 때마다 특수탄 3발이 소실된다',
+  text: '사격을 마칠 때마다 특수탄 1발이 소실된다',
   onMagEnd: (c) => {
     if (c.s.dryRun || c.s.enemy.hp <= 0) return
-    for (let i = 0; i < 3; i += 1) {
-      const ids = Object.keys(c.s.specials).filter((k) => (c.s.specials[k] ?? 0) > 0)
-      if (ids.length === 0) return
-      const id = ids[c.s.rng.int(ids.length)]
-      c.s.specials[id] = Math.max(0, (c.s.specials[id] ?? 0) - 1)
-    }
+    const ids = Object.keys(c.s.specials).filter((k) => (c.s.specials[k] ?? 0) > 0)
+    if (ids.length === 0) return
+    const id = ids[c.s.rng.int(ids.length)]
+    c.s.specials[id] = Math.max(0, (c.s.specials[id] ?? 0) - 1)
   },
 }
 

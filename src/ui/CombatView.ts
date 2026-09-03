@@ -332,12 +332,12 @@ export class CombatView {
     const s = this.s
     if (s === null) return
     this.renderMag(s)
-    this.updateCounts(s)
+    this.updateCounts()
   }
 
-  private updateCounts(s: CombatState): void {
+  private updateCounts(): void {
     for (const [id, node] of this.countNodes) {
-      const left = (s.specials[id] ?? 0) - this.plan.filter((r) => r.special === id).length
+      const left = this.remaining(id)
       node.textContent = String(left)
       const card = node.parentElement
       if (card !== null) setClass(card, 'out', left <= 0)
@@ -372,21 +372,31 @@ export class CombatView {
       const cnt = add(card, 'div', 'ammo-count', String(left))
       this.countNodes.set(id, cnt)
       setClass(card, 'out', left <= 0)
+      // 잔량은 **살아 있는 상태**(this.s)에서 읽는다. 여기서 렌더 시점의 s 를
+      //   가둬 두면, 재고가 0 이 된 뒤에도 그때의 숫자를 보고 통과시킨다.
       this.bin.add(
         on(card, 'click', () => {
-          const cur = (s.specials[id] ?? 0) - this.plan.filter((r) => r.special === id).length
-          if (cur <= 0) return
+          if (this.remaining(id) <= 0) return
           this.push(makeRound(id))
         }),
       )
-      this.bin.add(longPress(card, () => showRoundInfo(id, s.specials[id] ?? 0)))
+      this.bin.add(longPress(card, () => showRoundInfo(id, this.s?.specials[id] ?? 0)))
     }
+  }
+
+  /** 지금 이 순간 더 넣을 수 있는 발수 (보유 - 이미 계획에 넣은 수) */
+  private remaining(id: string): number {
+    const s = this.s
+    if (s === null) return 0
+    return (s.specials[id] ?? 0) - this.plan.filter((r) => r.special === id).length
   }
 
   private push(r: Round): void {
     const s = this.s
     if (s === null || this.busy) return
     if (this.plan.length >= s.cap) return
+    // 마지막 관문 — 어느 경로로 들어왔든 없는 탄은 계획에 못 들어간다
+    if (r.special !== null && this.remaining(r.special) <= 0) return
     this.plan.push(r)
     sfx('tap', 1 + this.plan.length * 0.03)
     this.refreshPlan()

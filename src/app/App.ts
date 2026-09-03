@@ -666,6 +666,11 @@ export class App {
     } finally {
       this.acting = false
     }
+    // 탄창을 비우면 재고가 바뀐다 — 소모된 특수탄, 재발사로 **안** 줄어든 특수탄,
+    //   탐식 같은 패시브가 사격이 끝난 뒤 먹어 치운 특수탄까지. 여기서 다시 그리지
+    //   않으면 사라진 탄 카드가 그대로 남아 다음 탄창에 집어넣을 수 있는 것처럼
+    //   보인다 (실제로는 validatePlan 이 조용히 버려서 빈 자리가 된다).
+    if (this.combat === s && this.view !== null) this.view.render(s)
     this.settle(s)
   }
 
