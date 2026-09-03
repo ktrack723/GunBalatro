@@ -71,15 +71,26 @@ const HALF_PI = Math.PI / 2
 const CASING_POOL = 10
 const CASING_LIFE = 0.85
 
+/**
+ * 재장전 중 총을 옆으로 트는 각도. **완전히 옆으로 눕히지 않는다** — 0.62rad(36°)
+ * 은 총을 거의 직각으로 세워서, 탄창이 화면 밖으로 밀려나고 삽탄이 안 보였다.
+ * 볼 면이 드러날 만큼만 살짝 튼다.
+ */
+const CANT_YAW = 0.30
+const CANT_ROLL = 0.18
+const CANT_SHIFT = 0.024
+
 const MAG_HOME = new THREE.Vector3(0, -0.105, -0.178)
 /**
  * 탄창 '제시' 자세 — 총 **왼쪽 옆**으로 빼낸다.
  * 탄창은 총 아래에 있어서, 카메라가 뒤에서 보는 구도에서는 몸체에 가린다.
  * 옆으로 빼야 삽탄이 실제로 보인다.
  */
-// 총을 안쪽으로 눕히는 검사 자세가 들어온 뒤로 −0.165 로는 몸체에 다시 가렸다.
-// 더 왼쪽·앞으로 빼서 탄창 전체와 삽탄이 보이게 한다.
-const MAG_PRESENT = new THREE.Vector3(-0.355, 0.010, -0.315)
+// −0.355 는 총이 **오른쪽**으로 눕던 시절의 값이다. 그때는 왼쪽으로 크게 빼야
+// 몸체 뒤에서 나왔지만, 이제는 총이 왼쪽으로 돌아 탄창실이 이미 카메라를 향한다.
+// 같은 값을 유지하면 탄창이 화면 왼쪽 밖으로 나간다 (실측 화면 x = -68px).
+// 회전이 하던 일을 회전에 맡기고, 옆으로 미는 양은 줄인다.
+const MAG_PRESENT = new THREE.Vector3(-0.145, 0.010, -0.315)
 const ROUND_GEO = new THREE.CylinderGeometry(0.0115, 0.0115, 0.052, 8, 1, false)
 ROUND_GEO.rotateX(Math.PI / 2)
 /**
@@ -598,9 +609,9 @@ export class GunRig {
     // 검사 자세 — 요(yaw) 로 볼 면을 카메라로 돌리고, 롤로 눕힌다. 부호가 방향이다.
     //   반동은 rotation.x / position.y·z 만 쓰므로 여기서 y·z·x 를 써도 겹치지 않는다.
     const cant = this.inspectCant
-    this.recoilNode.rotation.y = -0.62 * cant
-    this.recoilNode.rotation.z = 0.34 * cant
-    this.recoilNode.position.x = 0.045 * cant
+    this.recoilNode.rotation.y = -CANT_YAW * cant
+    this.recoilNode.rotation.z = CANT_ROLL * cant
+    this.recoilNode.position.x = CANT_SHIFT * cant
     // 스프링이 강하게 감쇠돼 kickX 자체는 0.33 언저리까지밖에 안 간다 —
     //   계수를 키워 **눈에 보이는 각도**로 만든다 (실측 0.038rad = 2° → 0.14rad = 8°).
     this.recoilNode.rotation.x = this.kickX * 0.42
