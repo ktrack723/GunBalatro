@@ -75,8 +75,9 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   const caption = add(host, 'div', 'load-caption', '')
 
   // 동작은 **하나씩 끝내고** 다음으로 넘어가며, 단계마다 **다른 소리**가 난다.
-  //   순서는 실총의 절차다: 들어올리고 → 노리쇠를 당겨 잠그고 → 탄창을 빼고 →
-  //   삽탄하고 → 탄창을 물리고 → 노리쇠를 놓고 → 조준한다.
+  //   탄창을 비우면 노리쇠는 그 자리에서 후퇴 고정된다(§2.3 magEnd). 그러니 재장전은
+  //   노리쇠를 다시 당기는 데서 시작하지 않는다 — 이미 뒤에 있다.
+  //   순서: 들어올리고 → 탄창을 빼고 → 삽탄하고 → 탄창을 물리고 → 노리쇠를 놓고 → 조준한다.
   const step = async (
     text: string,
     ms: number,
@@ -88,6 +89,9 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
     fn(1)
   }
 
+  // 노리쇠는 마지막 탄을 쏜 그대로 **후퇴 고정** 상태다. 눈에 보이게 못 박아 둔다.
+  gun.setChargingHandle(1)
+
   // ① 총을 카메라 앞으로 들어올린다
   sfx('poseUp', 1, 0)
   await step('총을 든다', 260, (t) => {
@@ -96,13 +100,7 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   }, easeOut)
   await wait(70, sp)
 
-  // ② 노리쇠 후퇴 — 당겨서 잠근다 (탄창을 빼기 전에 한다)
-  sfx('boltBack', 1, 0)
-  d.haptic('heavy')
-  await step('노리쇠 후퇴', 190, (t) => gun.setChargingHandle(t), easeOut)
-  await wait(110, sp)
-
-  // ③ 탄창 해제 — 멈치를 누르고, 탄창이 빠진다
+  // ② 탄창 해제 — 멈치를 누르고, 탄창이 빠진다
   sfx('magRelease', 1, 0)
   await wait(90, sp)
   sfx('magOut', 1, 0)
@@ -110,7 +108,7 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   await step('탄창 해제', 230, (t) => gun.setMagPresent(t), easeOut)
   await wait(110, sp)
 
-  // ④ 삽탄 — 한 발마다 탁. 마지막 탄부터 넣는다(FILO)
+  // ③ 삽탄 — 한 발마다 탁. 마지막 탄부터 넣는다(FILO)
   caption.textContent = '삽탄 — 마지막 탄부터'
   for (let k = plan.length - 1; k >= 0; k -= 1) {
     await tween(dur(120, sp), (t) => gun.setRoundInsert(k, t), easeOutBack)
@@ -121,21 +119,23 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   }
   await wait(90, sp)
 
-  // ⑤ 탄창 장착
+  // ④ 탄창 장착
   sfx('magIn', 1, 0)
   d.haptic('heavy')
   await step('탄창 장착', 230, (t) => gun.setMagSeat(t), easeIn)
   await wait(150, sp)
 
-  // ⑥ 노리쇠 전진 — 놓으면 약실에 문다
+  // ⑤ 노리쇠 전진 — 놓으면 약실에 문다.
+  //   여기서 재장전이 '끝났다' 는 신호가 나므로 **완결에 시간을 준다**: 전진 자체를
+  //   길게 끌고, 물린 뒤에도 한 박자 머문 다음에야 다음 동작으로 넘어간다.
   sfx('boltFwd', 1, 0)
   d.haptic('heavy')
-  await step('노리쇠 전진', 110, (t) => gun.setChargingHandle(1 - t), easeIn)
+  await step('노리쇠 전진', 240, (t) => gun.setChargingHandle(1 - t), easeIn)
   gun.setChargingHandle(0)
   gun.endReload()
-  await wait(160, sp)
+  await wait(300, sp)
 
-  // ⑦ 노리쇠가 돌아온 **다음에** 조준선을 정렬한다
+  // ⑥ 노리쇠가 돌아온 **다음에** 조준선을 정렬한다
   sfx('aimUp', 1, 0)
   await step('조준', 240, (t) => {
     scene.setInspect(1 - t)
