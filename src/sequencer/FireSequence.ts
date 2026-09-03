@@ -72,75 +72,76 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   gun.beginReload(plan.map(colorNum))
 
   const host = d.view.viewportEl
-  const caption = add(host, 'div', 'load-caption', '탄창 분리')
+  const caption = add(host, 'div', 'load-caption', '')
 
-  // 동작은 **하나씩 끝내고** 다음으로 넘어간다. 겹쳐 돌리면 무엇을 하는 중인지
-  //   읽히지 않는다 (탄창을 물리면서 장전손잡이를 당기는 그림이 그랬다).
-
-  // ① 총을 카메라 앞으로 끌어와 눕힌다
-  await tween(
-    dur(260, sp),
-    (t) => {
-      scene.setInspect(t)
-      scene.gun.setInspectCant(t)
-    },
-    easeOut,
-  )
-  await wait(60, sp)
-
-  // ② 탄창을 뺀다
-  await tween(dur(220, sp), (t) => gun.setMagPresent(t), easeOut)
-  gun.setMagPresent(1)
-  sfx('magOut')
-  d.haptic('light')
-  await wait(80, sp)
-  caption.textContent = '장전 — 마지막 탄부터'
-
-  // ② FILO 삽탄
-  for (let k = plan.length - 1; k >= 0; k -= 1) {
-    await tween(dur(115, sp), (t) => gun.setRoundInsert(k, t), easeOutBack)
-    gun.setRoundInsert(k, 1)
-    sfx('roundIn', 0.92 + ((plan.length - k) % 3) * 0.06, 0)
-    d.haptic('light')
-    await wait(34, sp)
+  // 동작은 **하나씩 끝내고** 다음으로 넘어가며, 단계마다 **다른 소리**가 난다.
+  //   순서는 실총의 절차다: 들어올리고 → 노리쇠를 당겨 잠그고 → 탄창을 빼고 →
+  //   삽탄하고 → 탄창을 물리고 → 노리쇠를 놓고 → 조준한다.
+  const step = async (
+    text: string,
+    ms: number,
+    fn: (t: number) => void,
+    ease?: (t: number) => number,
+  ): Promise<void> => {
+    caption.textContent = text
+    await tween(dur(ms, sp), fn, ease)
+    fn(1)
   }
 
-  // ④ 탄창을 다시 물린다 — 여기까지 끝난 **뒤에** 장전손잡이를 잡는다
-  caption.textContent = '탄창 결합'
+  // ① 총을 카메라 앞으로 들어올린다
+  sfx('poseUp', 1, 0)
+  await step('총을 든다', 260, (t) => {
+    scene.setInspect(t)
+    scene.gun.setInspectCant(t)
+  }, easeOut)
   await wait(70, sp)
-  await tween(dur(220, sp), (t) => gun.setMagSeat(t), easeIn)
-  gun.setMagSeat(1)
-  sfx('magIn')
-  d.haptic('heavy')
-  await wait(120, sp)
 
-  // ⑤ 장전손잡이를 당긴다
-  caption.textContent = '장전손잡이'
-  await tween(dur(150, sp), (t) => gun.setChargingHandle(t), easeOut)
-  gun.setChargingHandle(1)
-  sfx('boltBack')
+  // ② 노리쇠 후퇴 — 당겨서 잠근다 (탄창을 빼기 전에 한다)
+  sfx('boltBack', 1, 0)
+  d.haptic('heavy')
+  await step('노리쇠 후퇴', 190, (t) => gun.setChargingHandle(t), easeOut)
   await wait(110, sp)
 
-  // ⑥ 놓는다 — 노리쇠가 전진해 약실에 문다
-  await tween(dur(90, sp), (t) => gun.setChargingHandle(1 - t), easeIn)
+  // ③ 탄창 해제 — 멈치를 누르고, 탄창이 빠진다
+  sfx('magRelease', 1, 0)
+  await wait(90, sp)
+  sfx('magOut', 1, 0)
+  d.haptic('light')
+  await step('탄창 해제', 230, (t) => gun.setMagPresent(t), easeOut)
+  await wait(110, sp)
+
+  // ④ 삽탄 — 한 발마다 탁. 마지막 탄부터 넣는다(FILO)
+  caption.textContent = '삽탄 — 마지막 탄부터'
+  for (let k = plan.length - 1; k >= 0; k -= 1) {
+    await tween(dur(120, sp), (t) => gun.setRoundInsert(k, t), easeOutBack)
+    gun.setRoundInsert(k, 1)
+    sfx('roundIn', 0.90 + ((plan.length - k) % 4) * 0.07, 0)
+    d.haptic('light')
+    await wait(80, sp)
+  }
+  await wait(90, sp)
+
+  // ⑤ 탄창 장착
+  sfx('magIn', 1, 0)
+  d.haptic('heavy')
+  await step('탄창 장착', 230, (t) => gun.setMagSeat(t), easeIn)
+  await wait(150, sp)
+
+  // ⑥ 노리쇠 전진 — 놓으면 약실에 문다
+  sfx('boltFwd', 1, 0)
+  d.haptic('heavy')
+  await step('노리쇠 전진', 110, (t) => gun.setChargingHandle(1 - t), easeIn)
   gun.setChargingHandle(0)
   gun.endReload()
-  sfx('boltFwd')
-  d.haptic('heavy')
-  await wait(140, sp)
+  await wait(160, sp)
 
-  // ⑦ 노리쇠가 돌아온 **다음에** 조준선을 정렬한다. 총을 내렸다 다시 드는 게 아니라
-  //    검사 자세에서 곧장 조준으로 넘어간다 — 그 다음에야 첫 발이 나간다.
-  caption.textContent = '조준'
-  await tween(
-    dur(240, sp),
-    (t) => {
-      scene.setInspect(1 - t)
-      scene.gun.setInspectCant(1 - t)
-      scene.setAim(t)
-    },
-    easeOut,
-  )
+  // ⑦ 노리쇠가 돌아온 **다음에** 조준선을 정렬한다
+  sfx('aimUp', 1, 0)
+  await step('조준', 240, (t) => {
+    scene.setInspect(1 - t)
+    scene.gun.setInspectCant(1 - t)
+    scene.setAim(t)
+  }, easeOut)
   scene.setInspect(0)
   scene.gun.setInspectCant(0)
   scene.setAim(1)
@@ -307,10 +308,11 @@ export async function playFireSequence(
         //   눈으로 보여야 다음 탄창 계획이 선다. 숫자가 스르륵 내려가고
         //   총의 발열색도 같이 꺼진다 — 이 한 장면이 이월 규칙을 통째로 가르친다.
         case 'magEnd': {
-          // 사격이 끝났으니 조준을 푼다 (다음 탄창은 다시 장전 → 조준 순서다)
+          // 사격이 끝났으니 조준을 풀고 원래 자세로 돌아간다 (이것도 한 동작이다)
           if (has3d(d.scene)) {
             const sc = d.scene
-            await tween(dur(200, sp), (t) => sc.setAim(1 - t), easeIn)
+            sfx('poseDown', 1, 0)
+            await tween(dur(220, sp), (t) => sc.setAim(1 - t), easeIn)
             sc.setAim(0)
           }
           sfx('boltBack')

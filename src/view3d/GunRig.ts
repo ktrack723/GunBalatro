@@ -331,25 +331,37 @@ export class GunRig {
     const sightMat = new THREE.MeshStandardMaterial({
       color: 0x9aa2ab, roughness: 0.35, metalness: 0.85,
     })
+    //   아이언사이트도 **가늘게**. 노치 사이가 뚫려 있어야 그 틈으로 적이 보인다.
     const iron: THREE.BufferGeometry[] = [
       // 가늠자 — 뒤쪽 노치 (좌우 기둥 + 아래 다리)
-      box(0.010, 0.030, 0.012, -0.020, 0.076, -0.150),
-      box(0.010, 0.030, 0.012, 0.020, 0.076, -0.150),
-      box(0.050, 0.010, 0.012, 0, 0.064, -0.150),
-      // 가늠쇠 — 앞쪽 기둥과 보호 날개
-      box(0.009, 0.040, 0.012, 0, 0.080, -0.560),
-      box(0.007, 0.030, 0.010, -0.018, 0.075, -0.560),
-      box(0.007, 0.030, 0.010, 0.018, 0.075, -0.560),
+      box(0.007, 0.026, 0.010, -0.024, 0.078, -0.150),
+      box(0.007, 0.026, 0.010, 0.024, 0.078, -0.150),
+      box(0.055, 0.007, 0.010, 0, 0.066, -0.150),
+      // 가늠쇠 — 앞쪽 기둥과 보호 날개 (날개는 바깥으로 벌린다)
+      box(0.006, 0.034, 0.010, 0, 0.082, -0.560),
+      box(0.005, 0.026, 0.008, -0.022, 0.078, -0.560),
+      box(0.005, 0.026, 0.008, 0.022, 0.078, -0.560),
     ]
     this.ironGroup.add(new THREE.Mesh(mergeGeometries(iron)!, sightMat))
     for (const g of iron) g.dispose()
     this.parts.add(this.ironGroup)
 
+    // 경통을 **속이 빈 링 두 개 + 가는 레일**로 만든다.
+    //   막힌 원기둥은 조준선 한가운데에 은색 벽을 세우는 것과 같아서 적이 통째로
+    //   가려졌다 (실측 스크린샷). 링만 남기면 가운데가 뚫려 적이 그대로 보이고,
+    //   '스코프를 통해 본다' 는 그림은 링 두 개로 충분히 읽힌다.
+    const ring = (r: number, t: number, z: number): THREE.BufferGeometry => {
+      const g = new THREE.TorusGeometry(r, t, 6, 18)
+      g.translate(0, 0.086, z)
+      return g
+    }
     const scope: THREE.BufferGeometry[] = [
-      cyl(0.036, 0.036, 0.185, 12, 0, 0.086, -0.215, 0, 0, HALF_PI), // 경통
-      cyl(0.042, 0.042, 0.022, 12, 0, 0.086, -0.300, 0, 0, HALF_PI), // 대물 렌즈테
-      cyl(0.040, 0.040, 0.020, 12, 0, 0.086, -0.128, 0, 0, HALF_PI), // 접안 렌즈테
-      box(0.030, 0.026, 0.030, 0, 0.055, -0.200),                     // 마운트
+      ring(0.030, 0.0055, -0.128), // 접안 링
+      ring(0.032, 0.0060, -0.300), // 대물 링
+      box(0.008, 0.008, 0.175, -0.028, 0.086, -0.214), // 좌 레일
+      box(0.008, 0.008, 0.175, 0.028, 0.086, -0.214),  // 우 레일
+      box(0.008, 0.008, 0.175, 0, 0.114, -0.214),      // 상 레일
+      box(0.026, 0.030, 0.030, 0, 0.058, -0.200),      // 마운트
     ]
     this.scopeGroup.add(new THREE.Mesh(mergeGeometries(scope)!, sightMat))
     for (const g of scope) g.dispose()
@@ -358,9 +370,13 @@ export class GunRig {
       color: 0xff4436, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false,
     })
+    // 레티클도 십자를 **가운데를 비우고** 그린다 — 정중앙에 점을 찍으면 그 점이
+    //   적의 급소를 덮는다. 바깥쪽 네 토막만 남긴다.
     const ret: THREE.BufferGeometry[] = [
-      box(0.030, 0.0022, 0.001, 0, 0.086, -0.140),
-      box(0.0022, 0.030, 0.001, 0, 0.086, -0.140),
+      box(0.011, 0.0018, 0.001, -0.014, 0.086, -0.140),
+      box(0.011, 0.0018, 0.001, 0.014, 0.086, -0.140),
+      box(0.0018, 0.011, 0.001, 0, 0.100, -0.140),
+      box(0.0018, 0.011, 0.001, 0, 0.072, -0.140),
     ]
     const retMesh = new THREE.Mesh(mergeGeometries(ret)!, retMat)
     retMesh.renderOrder = 14
