@@ -307,7 +307,7 @@ export class Fx {
     //   눈속임이라 그림자도 원근도 없다.
     //   이제 **진짜 광원**이 복도 끝까지 닿는다 — 벽·기물·적·총이 전부 한 순간
     //   자기 자리에서 밝아지고, 거리에 따라 자연스럽게 어두워진다.
-    this.muzzleLight = new THREE.PointLight(0xffe6c0, 0, 150, 0.85)
+    this.muzzleLight = new THREE.PointLight(0xffd7a0, 0, 70, 1.05)
     this.muzzleLight.castShadow = false
     // 뷰모델(총)도 자기 발사광에 반응해야 한다 → 두 레이어 모두 비춘다
     this.muzzleLight.layers.enableAll()
@@ -528,13 +528,14 @@ export class Fx {
    */
   /**
    * 발사광. **화염 스프라이트는 더 이상 그리지 않는다** — 총구에 그림을 붙이는 대신
-   * 진짜 점광 하나로만 표현한다. 대신 그 광원이 복도를 통째로 태울 만큼 세다:
-   * 벽·기물·적이 각자의 거리만큼 밝아지므로 "어디서 빛이 났는지" 가 화면에 남는다.
+   * 진짜 점광 하나로만 표현한다. 세기는 210 으로 되돌렸다 — 1500 은 복도가 통째로
+   * 하얘져서 무엇이 있는지 안 보였다(실측 화면의 85%가 휘도 200 초과).
+   * 각 면이 거리만큼 밝아질 정도면 "어디서 빛이 났는지" 는 충분히 읽힌다.
    * (스프라이트 풀은 남아 있지만 호출부가 없다.)
    */
   muzzleFlash(pos: THREE.Vector3): void {
     this.muzzleLight.position.copy(pos)
-    this.muzzleLight.intensity = 1500 * (0.3 + 0.7 * this.flashI)
+    this.muzzleLight.intensity = 210 * (0.3 + 0.7 * this.flashI)
     this.muzzleT = 0
   }
 
@@ -817,7 +818,7 @@ export class Fx {
     // --- 머즐 라이트 ---
     if (this.muzzleT < 1) {
       this.muzzleT = Math.min(1, this.muzzleT + d / 0.1)
-      this.muzzleLight.intensity *= Math.exp(-d / 0.040)
+      this.muzzleLight.intensity *= Math.exp(-d / 0.028)
       if (this.muzzleT >= 1) this.muzzleLight.intensity = 0
     }
 

@@ -148,6 +148,11 @@ function seedFromHash(): number | null {
 
 // ---------------------------------------------------------------------------
 
+/** 광학(스코프)을 달았는가 — 하드포인트든 보조 레일이든 하나라도 있으면 스코프다 */
+function hasSight(l: import('../core/types').Loadout): boolean {
+  return l.optic !== null || l.rails.some((r) => r !== null)
+}
+
 export class App {
   private readonly ui: HTMLElement
   private readonly canvas: HTMLCanvasElement
@@ -580,6 +585,8 @@ export class App {
       sc.gun.resetHeat(s.heat)
       // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)
       sc.gun.setMagazineCap(s.cap)
+      // 광학이 달렸으면 스코프, 아니면 아이언사이트로 조준한다
+      sc.gun.setOptic(hasSight(run.loadout))
       // 발을 끄는 소리 — 화면이 크게 흔들리는 이유를 귀로도 알려 준다
       sfx('skid', 1, 0)
       haptic(24)
@@ -639,6 +646,7 @@ export class App {
       view.render(s)
       this.syncInsets()
       this.scene?.gun.setMagazineCap(s.cap)
+      this.scene?.gun.setOptic(hasSight(s.loadout))
       toast('부착물을 교체했다')
     }
   }

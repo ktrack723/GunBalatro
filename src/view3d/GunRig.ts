@@ -82,6 +82,16 @@ const MAG_HOME = new THREE.Vector3(0, -0.105, -0.178)
 const MAG_PRESENT = new THREE.Vector3(-0.355, 0.010, -0.315)
 const ROUND_GEO = new THREE.CylinderGeometry(0.0115, 0.0115, 0.052, 8, 1, false)
 ROUND_GEO.rotateX(Math.PI / 2)
+/**
+ * 탄 끝의 은색 띠 — **플레이어를 보는 쪽** 끄트머리에만 얇고 짧게 두른다.
+ * 단색 원기둥은 색만 다른 막대로 읽혀서 어느 쪽이 앞인지, 무엇이 장전됐는지가 안 보인다.
+ */
+const ROUND_TIP_GEO = new THREE.CylinderGeometry(0.0122, 0.0122, 0.009, 8, 1, false)
+ROUND_TIP_GEO.rotateX(Math.PI / 2)
+ROUND_TIP_GEO.translate(0, 0, 0.0225)
+const TIP_MAT = new THREE.MeshStandardMaterial({
+  color: 0xd8dde3, roughness: 0.28, metalness: 0.9,
+})
 
 /** 탄창 앞뒤 경사 (실총의 레이크). 급탄구 기준으로 기울인다 */
 const MAG_RAKE = 0.10
@@ -315,6 +325,50 @@ export class GunRig {
     this.glowMesh.renderOrder = 12
     this.parts.add(this.glowMesh)
 
+    // --- 조준 장치 ---------------------------------------------------------
+    //   부착물에 광학이 있으면 **스코프**, 없으면 **아이언사이트**. 둘 중 하나만 뜬다.
+    //   조준 자세(ADS)에서 이 선을 적에게 맞추는 것이 사격 전 마지막 동작이다.
+    const sightMat = new THREE.MeshStandardMaterial({
+      color: 0x9aa2ab, roughness: 0.35, metalness: 0.85,
+    })
+    const iron: THREE.BufferGeometry[] = [
+      // 가늠자 — 뒤쪽 노치 (좌우 기둥 + 아래 다리)
+      box(0.010, 0.030, 0.012, -0.020, 0.076, -0.150),
+      box(0.010, 0.030, 0.012, 0.020, 0.076, -0.150),
+      box(0.050, 0.010, 0.012, 0, 0.064, -0.150),
+      // 가늠쇠 — 앞쪽 기둥과 보호 날개
+      box(0.009, 0.040, 0.012, 0, 0.080, -0.560),
+      box(0.007, 0.030, 0.010, -0.018, 0.075, -0.560),
+      box(0.007, 0.030, 0.010, 0.018, 0.075, -0.560),
+    ]
+    this.ironGroup.add(new THREE.Mesh(mergeGeometries(iron)!, sightMat))
+    for (const g of iron) g.dispose()
+    this.parts.add(this.ironGroup)
+
+    const scope: THREE.BufferGeometry[] = [
+      cyl(0.036, 0.036, 0.185, 12, 0, 0.086, -0.215, 0, 0, HALF_PI), // 경통
+      cyl(0.042, 0.042, 0.022, 12, 0, 0.086, -0.300, 0, 0, HALF_PI), // 대물 렌즈테
+      cyl(0.040, 0.040, 0.020, 12, 0, 0.086, -0.128, 0, 0, HALF_PI), // 접안 렌즈테
+      box(0.030, 0.026, 0.030, 0, 0.055, -0.200),                     // 마운트
+    ]
+    this.scopeGroup.add(new THREE.Mesh(mergeGeometries(scope)!, sightMat))
+    for (const g of scope) g.dispose()
+    // 레티클 — 접안부 안쪽의 십자선. 가산 블렌딩이라 어두워도 보인다.
+    const retMat = new THREE.MeshBasicMaterial({
+      color: 0xff4436, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false,
+    })
+    const ret: THREE.BufferGeometry[] = [
+      box(0.030, 0.0022, 0.001, 0, 0.086, -0.140),
+      box(0.0022, 0.030, 0.001, 0, 0.086, -0.140),
+    ]
+    const retMesh = new THREE.Mesh(mergeGeometries(ret)!, retMat)
+    retMesh.renderOrder = 14
+    for (const g of ret) g.dispose()
+    this.scopeGroup.add(retMesh)
+    this.parts.add(this.scopeGroup)
+    this.scopeGroup.visible = false
+
     this.muzzleObj.position.set(0, -0.028, -0.700)
     this.parts.add(this.muzzleObj)
 
@@ -327,7 +381,8 @@ export class GunRig {
     //   부품이 아니라 **떨어져 나간 물체**다 — 뷰모델 공간(object)에 두고 자체
     //   물리로 날린다. 레이어 1 을 직접 박아 둔다: Scene 은 생성 시점에 한 번만
     //   traverse 로 레이어를 칠하므로, 나중에 만든 메시는 칠해지지 않는다.
-    const caseGeo = cyl(0.0105, 0.0105, 0.036, 6, 0, 0, 0, 0, 0, HALF_PI)
+    // 탄피는 **탄과 같은 크기**다 (ROUND_GEO 와 동일 치수)
+    const caseGeo = cyl(0.0115, 0.0115, 0.052, 8, 0, 0, 0, 0, 0, HALF_PI)
     for (let i = 0; i < CASING_POOL; i += 1) {
       const m = new THREE.Mesh(caseGeo, this.brassMat)
       m.visible = false
@@ -413,6 +468,18 @@ export class GunRig {
   }
 
   private inspectCant = 0
+
+  private readonly ironGroup = new THREE.Group()
+  private readonly scopeGroup = new THREE.Group()
+
+  /**
+   * 광학 부착물이 달렸는가. 달렸으면 스코프, 아니면 아이언사이트가 보인다.
+   * 조준 자세에서 플레이어가 적과 맞추는 그 선이다.
+   */
+  setOptic(has: boolean): void {
+    this.scopeGroup.visible = has
+    this.ironGroup.visible = !has
+  }
 
   /** 배출된 탄피 (뷰모델 공간에서 자체 물리로 난다) */
   private readonly casings: Array<{
@@ -635,6 +702,9 @@ export class GunRig {
       const m = new THREE.Mesh(ROUND_GEO, mat)
       m.layers.set(1)
       m.visible = false
+      const tip = new THREE.Mesh(ROUND_TIP_GEO, TIP_MAT)
+      tip.layers.set(1)
+      m.add(tip)
       this.magTilt.add(m)
       this.roundMeshes.push(m)
       this.roundHome.push(new THREE.Vector3(0, top - i * gap, 0.020))

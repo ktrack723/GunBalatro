@@ -74,18 +74,26 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   const host = d.view.viewportEl
   const caption = add(host, 'div', 'load-caption', '탄창 분리')
 
-  // ① 총을 화면 중앙으로 들어올리면서 탄창을 뺀다
+  // 동작은 **하나씩 끝내고** 다음으로 넘어간다. 겹쳐 돌리면 무엇을 하는 중인지
+  //   읽히지 않는다 (탄창을 물리면서 장전손잡이를 당기는 그림이 그랬다).
+
+  // ① 총을 카메라 앞으로 끌어와 눕힌다
   await tween(
-    dur(300, sp),
+    dur(260, sp),
     (t) => {
       scene.setInspect(t)
-      // 총을 안쪽으로 눕힌다 — 적에게 겨눈 채 손잡이를 당기지 않는다
       scene.gun.setInspectCant(t)
-      gun.setMagPresent(t)
     },
     easeOut,
   )
+  await wait(60, sp)
+
+  // ② 탄창을 뺀다
+  await tween(dur(220, sp), (t) => gun.setMagPresent(t), easeOut)
+  gun.setMagPresent(1)
   sfx('magOut')
+  d.haptic('light')
+  await wait(80, sp)
   caption.textContent = '장전 — 마지막 탄부터'
 
   // ② FILO 삽탄
@@ -97,36 +105,47 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
     await wait(34, sp)
   }
 
-  // ③ 탄창을 다시 물린다
-  caption.textContent = '삽탄'
-  sfx('magIn')
-  await tween(dur(230, sp), (t) => gun.setMagSeat(t), easeIn)
+  // ④ 탄창을 다시 물린다 — 여기까지 끝난 **뒤에** 장전손잡이를 잡는다
+  caption.textContent = '탄창 결합'
+  await wait(70, sp)
+  await tween(dur(220, sp), (t) => gun.setMagSeat(t), easeIn)
   gun.setMagSeat(1)
+  sfx('magIn')
   d.haptic('heavy')
-  await wait(60, sp)
+  await wait(120, sp)
 
-  // ④ 장전손잡이 — 당겼다 놓는다
-  caption.textContent = '노리쇠 전진'
-  await tween(dur(130, sp), (t) => gun.setChargingHandle(t), easeOut)
+  // ⑤ 장전손잡이를 당긴다
+  caption.textContent = '장전손잡이'
+  await tween(dur(150, sp), (t) => gun.setChargingHandle(t), easeOut)
+  gun.setChargingHandle(1)
   sfx('boltBack')
-  await wait(50, sp)
+  await wait(110, sp)
+
+  // ⑥ 놓는다 — 노리쇠가 전진해 약실에 문다
   await tween(dur(90, sp), (t) => gun.setChargingHandle(1 - t), easeIn)
+  gun.setChargingHandle(0)
   gun.endReload()
   sfx('boltFwd')
   d.haptic('heavy')
+  await wait(140, sp)
 
-  // 총을 원래 자세로 되돌린다
-  caption.remove()
+  // ⑦ 노리쇠가 돌아온 **다음에** 조준선을 정렬한다. 총을 내렸다 다시 드는 게 아니라
+  //    검사 자세에서 곧장 조준으로 넘어간다 — 그 다음에야 첫 발이 나간다.
+  caption.textContent = '조준'
   await tween(
-    dur(200, sp),
+    dur(240, sp),
     (t) => {
       scene.setInspect(1 - t)
       scene.gun.setInspectCant(1 - t)
+      scene.setAim(t)
     },
-    easeIn,
+    easeOut,
   )
   scene.setInspect(0)
   scene.gun.setInspectCant(0)
+  scene.setAim(1)
+  caption.remove()
+  await wait(90, sp)
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +307,12 @@ export async function playFireSequence(
         //   눈으로 보여야 다음 탄창 계획이 선다. 숫자가 스르륵 내려가고
         //   총의 발열색도 같이 꺼진다 — 이 한 장면이 이월 규칙을 통째로 가르친다.
         case 'magEnd': {
+          // 사격이 끝났으니 조준을 푼다 (다음 탄창은 다시 장전 → 조준 순서다)
+          if (has3d(d.scene)) {
+            const sc = d.scene
+            await tween(dur(200, sp), (t) => sc.setAim(1 - t), easeIn)
+            sc.setAim(0)
+          }
           sfx('boltBack')
           if (has3d(d.scene)) d.scene.gun.boltBack()
           const from = shownHeat

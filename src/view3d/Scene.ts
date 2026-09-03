@@ -381,12 +381,36 @@ export class GameScene {
     this.applyInspect()
   }
 
+  /**
+   * 조준 자세 (0 = 지향 사격, 1 = 조준선 정렬).
+   *   총을 화면 가운데로 올려 가늠자/스코프가 적과 한 줄이 되게 한다.
+   *   재장전이 끝난 뒤 **마지막 동작**이 이것이고, 그 다음에야 쏜다.
+   */
+  setAim(t: number): void {
+    this.aimT = THREE.MathUtils.clamp(t, 0, 1)
+    this.applyInspect()
+  }
+
+  private aimT = 0
+
   private applyInspect(): void {
-    const t = this.inspectT
-    const e = t * t * (3 - 2 * t) // smoothstep
-    this.gunU = this.baseU + (0.06 - this.baseU) * e
-    this.gunV = this.baseV + (-0.24 - this.baseV) * e
-    this.gunDist = this.baseDist + (0.56 - this.baseDist) * e
+    const ss = (x: number): number => x * x * (3 - 2 * x)
+    const e = ss(this.inspectT)
+    const a = ss(this.aimT)
+    // 지향 → 조준 → 검사 순으로 덮어쓴다 (재장전 중에는 검사 자세가 이긴다)
+    // 조준: 총을 화면 **가운데 아래**로 놓는다. 가늠자/스코프는 모델 위쪽(y≈+0.08)에
+    //   있으므로, 총 원점을 중앙보다 낮게 두어야 조준선이 화면 한가운데에 온다.
+    //   거리를 base 보다 멀리 잡는 이유는 가까이 당기면 총이 화면 절반을 먹어
+    //   적이 통째로 가려지기 때문이다 (실측: dist 0.42 에서 26m 적이 안 보였다).
+    let u = this.baseU + (0.0 - this.baseU) * a
+    let v = this.baseV + (-0.275 - this.baseV) * a
+    let dist = this.baseDist + (0.72 - this.baseDist) * a
+    u += (0.06 - u) * e
+    v += (-0.24 - v) * e
+    dist += (0.56 - dist) * e
+    this.gunU = u
+    this.gunV = v
+    this.gunDist = dist
     this.layoutGun()
   }
 
