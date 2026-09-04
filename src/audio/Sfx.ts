@@ -101,6 +101,7 @@ export function unlockSfx(): void {
     // 첫 발·첫 삽탄이 합성음으로 나가지 않게 여기서 미리 디코딩한다
     preloadSample('fire')
     preloadSample('roundIn')
+    preloadSample('magIn')
   })
 }
 
@@ -149,6 +150,8 @@ const SAMPLE_SRC = {
   fire: 'sfx/fire.wav',
   /** 한 발 삽탄 — 탄창에 탄을 밀어 넣는 금속음 (0.108초) */
   roundIn: 'sfx/round-in.wav',
+  /** 탄창이 총에 물리는 순간 (0.30초) */
+  magIn: 'sfx/mag-in.wav',
 } as const
 
 type SampleId = keyof typeof SAMPLE_SRC
@@ -228,4 +231,15 @@ export function sfxRoundIn(rate = 1): void {
   if (playSample('roundIn', rate, 1.0)) return
   preloadSample('roundIn')
   sfx('roundIn', rate, 0)
+}
+
+/**
+ * 탄창이 물리는 소리. **장착이 끝나는 그 순간에** 한 번만 운다 —
+ * 탄창이 올라가는 동안 미리 울리면 그림보다 소리가 앞선다.
+ */
+export function sfxMagIn(): void {
+  if (!enabled) return
+  if (playSample('magIn', 1, 1.0)) return
+  preloadSample('magIn')
+  sfx('magIn', 1, 0)
 }

@@ -1,4 +1,4 @@
-import { sfx, unlockSfx } from './audio/Sfx'
+import { sfx, sfxMagIn, unlockSfx } from './audio/Sfx'
 import { pauseMusic, resumeMusic, startMusic } from './audio/Music'
 // ============================================================================
 // main.ts — 부팅 · rAF 루프 · iOS Safari 대응 (TECH.md §4)
@@ -72,7 +72,7 @@ class Audio implements AudioHook {
   play(id: string): void {
     if (id === 'bolt.back') return sfx('boltBack')
     if (id === 'bolt.forward') return sfx('boltFwd')
-    if (id === 'mag.seat') return sfx('magIn')
+    if (id === 'mag.seat') return sfxMagIn()
     if (id === 'reload.start') return sfx('magOut')
     if (id.startsWith('heat.stage.')) return sfx('heatUp')
   }

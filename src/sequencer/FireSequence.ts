@@ -129,7 +129,8 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   await step('탄창 장착', 220, (t) => gun.setCant(-1 + t), easeOut)
   gun.setCant(0)
   await wait(90, sp)
-  sfx('magIn', 1, 0)
+  // 소리는 **물리는 순간** 난다 — setMagSeat(1) 이 mag.seat 를 쏘고, 그게
+  //   녹음된 장착음으로 이어진다. 여기서 미리 울리면 그림보다 230ms 앞선다.
   d.haptic('heavy')
   await step('탄창 장착', 230, (t) => gun.setMagSeat(t), easeIn)
   await wait(150, sp)

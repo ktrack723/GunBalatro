@@ -770,6 +770,7 @@ export class GunRig {
 
   /** 0 = 총에 물린 상태, 1 = 탄창을 빼 든 제시 자세 (총 자세도 함께 움직인다) */
   setMagPresent(t: number): void {
+    if (t > 0) this.magSeated = false
     this.setGunPose(t)
     this.setMagOffset(t)
   }
@@ -806,9 +807,17 @@ export class GunRig {
       this.magRig.position.copy(MAG_HOME)
       this.magRig.rotation.set(0, 0, 0)
       this.recoilNode.position.y = -0.010
-      this.onSound('mag.seat')
+      // **가장자리에서만** 운다. 시퀀서의 step 은 트윈이 t=1 에 닿은 뒤 fn(1) 을
+      //   한 번 더 부르므로, 매번 울리면 장착음이 같은 프레임에 두 번 겹친다.
+      if (!this.magSeated) {
+        this.magSeated = true
+        this.onSound('mag.seat')
+      }
     }
   }
+
+  /** 탄창이 물려 있는가 — 장착음을 한 번만 내기 위한 상태 */
+  private magSeated = true
 
   /** 0 = 전진, 1 = 완전 후퇴. 시퀀서가 당겼다 놓는다 */
   setChargingHandle(t: number): void {
