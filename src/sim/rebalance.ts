@@ -62,25 +62,37 @@ interface Payload {
   bounds?: Record<string, [number, number]>
 }
 
+/**
+ * 정체성 하한 — 이 수 아래로는 카드가 자기 이름을 잃는다.
+ *
+ *   특수탄은 **그 자체로 '특수탄 조건' 부착물의 방아쇠**다 (촉매 총열·소이 촉매·
+ *   황제의 눈·열화상…). 그래서 자기 수치를 0 으로 만들어도 앙상블에서는 값이
+ *   나오고, 튜너는 밴드를 맞추려 그 방향으로 간다. 실측 결과가 이랬다:
+ *     철갑탄 DMG 7.5  (기본탄 12 보다 약하다 — '데미지 탄' 이 아니다)
+ *     소이탄 온도 0.23 (기본탄 0.55 보다 낮다 — '예열탄' 이 아니다)
+ *     충격탄 넉백 0.12m (밀어내지 않는다)
+ *   밴드는 값을 맞추지 카드가 무엇인지는 모른다. 그건 설계가 정한다.
+ */
 const PAYLOAD: Record<string, Payload> = {
   // --- 탄: 기본 dmg/heat 가 곧 세기다. 훅이 있는 탄은 훅 쪽이 페이로드다 ---
-  sp_incendiary: { keys: ['heat'] },
-  sp_ap: { keys: ['dmg'] },
-  sp_shock: { keys: ['knock', 'cap'] },
+  //   하한은 전부 기본탄(DMG 12 · 온도 0.55) 대비로 읽는다.
+  sp_incendiary: { keys: ['heat'], min: 2.5 },
+  sp_ap: { keys: ['dmg'], min: 30 },
+  sp_shock: { keys: ['knock', 'cap'], bounds: { knock: [2, 8], cap: [4, 16] } },
   sp_adhesive: { keys: ['bonus'] },
-  sp_thermite: { keys: ['heat'] },
+  sp_thermite: { keys: ['heat'], min: 4 },
   sp_marker: { keys: ['vuln'] },
-  sp_chill: { keys: ['dmg'] },
-  sp_cryo: { keys: ['mul'] },
+  sp_chill: { keys: ['dmg'], min: 30 },
+  sp_cryo: { keys: ['mul'], min: 3 },
   sp_purge: { keys: ['dmg', 'mul'], bounds: { mul: [4, 40] } },
   // 힘이 '다음 탄 배수' 라는 규칙에 있다. dmg 로 밴드를 맞추면 26 → 203 이 되어
   // 다른 카드가 된다 — 배수 자체를 민다.
   sp_sanctified: { keys: ['mult'], min: 1.2, max: 12 },
-  sp_cascade: { keys: ['mult', 'heat'], bounds: { mult: [1.2, 6] } },
-  sp_breach: { keys: ['dmg'] },
+  sp_cascade: { keys: ['mult', 'heat'], bounds: { mult: [1.2, 6], heat: [3, 12] } },
+  sp_breach: { keys: ['dmg'], min: 40 },
   sp_solitary: { keys: ['bonus'] },
   sp_firststrike: { keys: ['bonus'] },
-  sp_singularity: { keys: ['mul'] },
+  sp_singularity: { keys: ['mul'], min: 3 },
   sp_judgment: { keys: ['dmg', 'mul'], bounds: { mul: [1.2, 3] } },
 
   // --- 총열 ---

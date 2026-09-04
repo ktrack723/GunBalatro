@@ -436,7 +436,8 @@ describe('배수 래치 (성탄 · 연쇄 점화탄 · 이단심문관)', () => 
   it('성탄 다음의 기본탄은 표의 배수만큼 데미지를 받는다', () => {
     const l = loadout([], { sp_sanctified: 1 })
     const { shots } = shoot(l, [makeRound('sp_sanctified'), basicRound()])
-    expect(shots[1].dmg).toBe(BASIC_DMG * TR.sp_sanctified.mult)
+    // 파이프라인은 표시 직전에 반올림한다
+    expect(shots[1].dmg).toBe(Math.round(BASIC_DMG * TR.sp_sanctified.mult))
   })
 
   it('훅이 있는 탄은 배수를 **한 번만** 받는다 (제곱이 되지 않는다)', () => {
