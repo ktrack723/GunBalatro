@@ -16,10 +16,12 @@ import { SPECIALS } from '../core/data/specials'
 import { syncAttachments } from '../core/data/attachments'
 import { syncSpecials } from '../core/data/specials'
 import { TA, TR, allKnobs } from '../core/data/tuning'
-import { ATTACH_BANDS, ROUND_BANDS, RARITIES, type Band } from './bands'
+import { ROUND_BANDS, RARITIES, type Band } from './bands'
 import * as bands from './bands'
 import {
   type Ctx,
+  clearBaseCache,
+  measureAttachAnchor,
   type ItemValue,
   coverage,
   enumerateLoadouts,
@@ -103,7 +105,7 @@ const PAYLOAD: Record<string, Payload> = {
   hg_furnace: { keys: ['heat'] },
   hg_martyr: { keys: ['heat', 'step', 'max'] },
   hg_twoshot: { keys: ['heat'] },
-  hg_inquisition: { keys: ['mult'], min: 1.1, max: 4 },
+  hg_inquisition: { keys: ['heat', 'mult'], bounds: { mult: [1.1, 3] } },
 
   // --- 광학 ---
   op_laser: { keys: ['dmg'] },
@@ -160,6 +162,9 @@ function knob(id: string, key: string): { get(): number; set(v: number): void } 
 function sync(): void {
   syncSpecials()
   syncAttachments()
+  // 눈금이 바뀌면 '그 칸만 비운' 기준선도 바뀐다 — 캐시를 안 비우면 튜너가
+  // 옛 기준선으로 새 값을 재게 되어 수렴이 엉뚱한 곳으로 간다.
+  clearBaseCache()
 }
 
 /**
@@ -168,9 +173,9 @@ function sync(): void {
  * (안 내리면 표준이 영원히 0.0 이고 나머지 탄창은 전부 미달로 찍힌다.)
  */
 function bandFor(slot: string, rarity: Rarity): Band {
-  if (slot !== 'magazine') return ATTACH_BANDS[rarity]
-  const base = ATTACH_BANDS.common.mid
-  const b = ATTACH_BANDS[rarity]
+  if (slot !== 'magazine') return bands.ATTACH_BANDS[rarity]
+  const base = bands.ATTACH_BANDS.common.mid
+  const b = bands.ATTACH_BANDS[rarity]
   return { lo: Math.max(0, b.lo - base), mid: Math.max(0, b.mid - base), hi: Math.max(0, b.hi - base) }
 }
 
@@ -420,6 +425,14 @@ function main(): void {
   // eslint-disable-next-line no-console
   const out = (s: string): void => console.log(s)
 
+  // 밴드의 바닥 못을 **잰다** — '탄창에 기본탄 한 발' 이 이 지표에서 몇 %인가.
+  const reanchor = (): number => {
+    const v = measureAttachAnchor(ctxFor('barrel'))
+    bands.setAttachAnchor(v)
+    return v
+  }
+  out('바닥 못 실측: 탄창에 기본탄 +1발 = 처리량 +' + reanchor().toFixed(1) + '%  → 일반 부착물의 중앙')
+  out('')
   out(bands.report())
   out('')
 
@@ -430,13 +443,15 @@ function main(): void {
   }
 
   for (let pass = 1; pass <= passes; pass += 1) {
+    // 앙상블의 부착물이 바뀌면 '한 발어치' 도 같이 움직인다 — 패스마다 다시 잰다
+    const a = reanchor()
     const vals = measureAll()
     const off = vals.filter((v) => {
       if (STRUCTURAL.has(v.id)) return false
       const b = targetOf(v)
       return v.value < b.lo || v.value > b.hi
     })
-    out('════ 패스 ' + pass + ' — 밴드 밖 ' + off.length + ' / ' + vals.length + '종 ════')
+    out('════ 패스 ' + pass + ' — 밴드 밖 ' + off.length + ' / ' + vals.length + '종 (못 ' + a.toFixed(0) + '%) ════')
     // 가장 크게 벗어난 것부터 — 그것이 다른 아이템의 측정 맥락도 가장 크게 흔든다
     off.sort((a, b) => devi(b) - devi(a))
     for (const v of off) {

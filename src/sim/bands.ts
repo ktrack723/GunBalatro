@@ -35,15 +35,25 @@ export const STEP = 1.6
  * R3 — 바닥 눈금.
  *
  *  부착물: **일반 부착물 한 장 = 탄창에 기본탄 한 발을 더 넣는 것**.
- *    5연발에 한 발을 더하면 처리량이 +20% 다. 그래서 일반의 중앙은 20(%).
- *    이 못은 카탈로그와 무관하다 — 용량과 기본탄만으로 정의된다.
+ *    이 못은 카탈로그와 무관하지만 **지표에는 의존한다**. 처음에는 '5연발에 한 발이면
+ *    +20%' 라고 산수로 적었는데, 그건 피해가 발수에 비례한다고 본 것이다. 실제로는
+ *    온도가 탄창 안에서 누적되어 뒤쪽 탄이 훨씬 세므로 한 발 추가의 값이 훨씬 크다
+ *    (실측 +169%). 그래서 못의 **값은 재서** 넣는다 — 규칙("한 발어치")은 그대로 두고
+ *    숫자만 지표에서 얻는다. setAttachAnchor 를 부르지 않으면 아래 기본값을 쓴다.
  *
  *  탄: **일반 특수탄 한 발 = 기본탄 4발**.
  *    특수탄은 쓰면 사라지는데 기본탄은 무한이다. 소모품이 무한 자원보다
  *    '조금' 나은 정도면 아무도 아껴 쓸 이유가 없다 — 명확히 넘어야 한다.
  *    4배는 '한 발로 한 탄창의 8할' 이라는 체감의 하한이다.
  */
-export const ANCHOR = { attach: 20, round: 4.0 }
+export const ANCHOR = { attach: 169, round: 4.0 }
+
+/** 측정한 '기본탄 한 발어치' 로 부착물 밴드를 다시 세운다 */
+export function setAttachAnchor(v: number): void {
+  if (!Number.isFinite(v) || v <= 0) return
+  ANCHOR.attach = v
+  ATTACH_BANDS = ladder(ANCHOR.attach)
+}
 
 export interface Band {
   lo: number
@@ -61,7 +71,7 @@ function ladder(anchor: number): Record<Rarity, Band> {
   return out
 }
 
-export const ATTACH_BANDS = ladder(ANCHOR.attach)
+export let ATTACH_BANDS = ladder(ANCHOR.attach)
 export const ROUND_BANDS = ladder(ANCHOR.round)
 
 // ---------------------------------------------------------------------------

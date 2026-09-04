@@ -22,12 +22,12 @@
 //   두 단위 모두 sim/bands.ts 의 유도된 밴드와 같은 눈금이다.
 // ============================================================================
 import type { Attachment, CombatState, Loadout, Rarity, Round } from '../core/types'
-import { BASE_HEAT } from '../core/types'
+import { BASE_HEAT, NODE_MUL } from '../core/types'
 import { makeRng } from '../core/rng'
 import { basicRound, cloneState, fire, makeRound, startCombat } from '../core/combat'
 import { ATT_BY_ID, STARTER_MAGAZINE } from '../core/data/attachments'
 import { SPECIALS } from '../core/data/specials'
-import { ARCHETYPES, PASSIVE_BY_ID } from '../core/data/enemies'
+import { ARCHETYPES, PASSIVE_BY_ID, baseHp } from '../core/data/enemies'
 import { ROUND_BANDS, priceLadder, rarityMix } from './bands'
 
 // ---------------------------------------------------------------------------
@@ -139,16 +139,44 @@ function withItem(l: Loadout, a: Attachment | null): Loadout {
 /** 적 패시브가 붙어 있을 확률 (run.ts: 위험도3 은 100%, 위험도2 는 30%) */
 const P_PASSIVE = 0.25 * 1.0 + 0.5 * 0.3
 
-function stateFor(l: Loadout, seed: number, passive: boolean): CombatState {
+/**
+ * 표적의 HP — **유한하게** 둔다. 이게 이 엔진의 가장 중요한 결정이다.
+ *
+ *   예전에는 1e12 로 두었다. "오버킬이 값을 잘라먹으면 비교가 망가진다" 는
+ *   이유였는데, 그 대가가 훨씬 컸다: 적이 죽지 않으니 온도가 탄창을 넘어 계속
+ *   누적되고, 온도 조건부 카드(용광로 심장 ≥10)는 자기가 올린 온도로 자기 조건을
+ *   켜는 양의 되먹임이 된다. 실측 응답이 통째로 지수였다 —
+ *     용광로 심장 heat 8 → 11.6% · heat 15 → **124.3%** (눈금 ×1.9 에 값 ×10.7)
+ *     냉각 자켓 carry 0.05 → 75.8% · 0.2 → **428%**
+ *   그래서 이분법이 수렴하지 않고 진동했고(패스마다 15→12→14→12→16), 눈금이
+ *   한계에 박힌 카드의 값이 패스를 돌 때마다 **혼자 올라갔다** (이단심문관 1442→2629).
+ *
+ *   실제 게임에서 그 폭주를 멈추는 것은 **적이 죽는다**는 사실이다. 그걸 그대로
+ *   모형에 넣는다: 적이 죽으면 탄창 반복을 멈추므로, 온도가 실제 전투 길이를 넘어
+ *   달아오르지 못한다.
+ *   눈금은 실측으로 골랐다 — 이 조합 앙상블이 대표 구성으로 이 HP 를 죽이는 데
+ *   중앙값 2~4 탄창이 든다. 1탄창이면 모두 포화해 아무 차이가 안 나고, 6탄창을
+ *   넘으면 다시 램프가 값을 지배한다.
+ */
+/**
+ * 표적 HP 를 **한 점이 아니라 구간으로** 연다.
+ *   한 점으로 두면 그 점에서만 말이 되는 자가 된다. HP 를 낮게 잡으면 전투가
+ *   1~2 탄창에 끝나 거리·경제 카드가 통째로 죽고(실측: 총검 거치대·임종의
+ *   조준경 0.0%, 간이 거리계 13.3%), 높게 잡으면 온도 램프가 다시 값을 지배한다.
+ *   섹터 3·5·7 을 같은 가중으로 섞으면 짧은 전투와 긴 전투가 모두 표에 들어온다 —
+ *   런에서 실제로 둘 다 만나므로 이게 정직한 분포다.
+ */
+const HP_LEVELS = [3, 5, 7].map((sec) => baseHp(sec, NODE_MUL.small, false))
+
+function stateFor(l: Loadout, seed: number, passive: boolean, hp = HP_LEVELS[1]!): CombatState {
   const arch = ARCHETYPES[0]!
   const s = startCombat(
     l,
     {
       archetype: arch,
       passive: passive ? (PASSIVE_BY_ID['plated'] ?? null) : null,
-      // 죽지 않을 만큼 크게 — 오버킬이 값을 잘라먹으면 비교가 망가진다
-      maxHp: 1e12,
-      hp: 1e12,
+      maxHp: hp,
+      hp,
       speed: arch.speed,
       startDist: arch.startDist,
       label: '표적',
@@ -186,8 +214,8 @@ export interface Tp {
   perShot: number
 }
 
-function throughput(l: Loadout, make: PlanFn, seed: number, passive: boolean): Tp {
-  const s = cloneState(stateFor(l, seed, passive))
+function throughput(l: Loadout, make: PlanFn, seed: number, passive: boolean, hp: number): Tp {
+  const s = cloneState(stateFor(l, seed, passive, hp))
   const d0 = s.distance
   const brass0 = s.loadout.brass
   let had = 0
@@ -197,7 +225,7 @@ function throughput(l: Loadout, make: PlanFn, seed: number, passive: boolean): T
   let mags = 0
   let specialShots = 0
   for (let k = 0; k < K; k += 1) {
-    if (s.distance <= 0) break
+    if (s.distance <= 0 || s.enemy.hp <= 0) break
     // **매 탄창 용량을 다시 읽어 계획을 짠다.** 고정 배열을 slice 하면 전투 중에
     // 용량이 자라는 탄창(증축)의 성장분이 통째로 안 보인다 — 실측에서 증축 탄창이
     // 발동 7% · 값 −9.5% 로 나온 원인이 이것이었다.
@@ -208,9 +236,9 @@ function throughput(l: Loadout, make: PlanFn, seed: number, passive: boolean): T
   }
   if (mags === 0) return { value: 0, consumed: 0, perShot: 0 }
 
-  const perMag = s.totalDamage / mags
   const spent = Math.max(0.5, (d0 - s.distance) / mags)
   const actions = d0 / spent
+  const perMag = s.totalDamage / mags
   const brassGain = s.loadout.brass - brass0
   s.loadout.brass = brass0
   let left = 0
@@ -224,10 +252,25 @@ function throughput(l: Loadout, make: PlanFn, seed: number, passive: boolean): T
   const consumed = had - left
   const perShot = perMag / Math.max(1, s.cap)
   void specialShots
+
+  /**
+   * 처리량 = **이 전투를 몇 번 이길 수 있는가** = 쓸 수 있는 사격 수 / 죽이는 데 든 사격 수.
+   *
+   *   예전에는 (탄창당 평균 피해 × 사격 수) 였다. 온도가 탄창을 넘어 누적되는
+   *   게임에서 그 곱은 램프를 **두 번** 세는 것이다 — 뒤쪽 탄창이 뜨거워 평균이
+   *   이미 올라가 있는데 거기에 사격 수를 또 곱했다.
+   *   이 형태는 두 축이 한 번씩만 들어간다: 화력은 분모(죽이는 데 드는 사격)를
+   *   줄이고, 거리·비용은 분자(쓸 수 있는 사격)를 늘린다. 그리고 한 탄창에 죽이면
+   *   분모가 1 에서 멈추므로 **오버킬은 값이 되지 않는다** — 실제 게임과 같다.
+   */
+  //   킬 소요 탄창 수는 **연속**으로 잡는다 (HP / 탄창당 피해). 정수로 세면
+  //   1↔2 사이에 계단이 생겨 이분법이 그 문턱에서 진동한다.
+  const killMags = perMag > 0 ? hp / perMag : 1e6
+  const value = actions / killMags
   return {
-    value: perMag * actions + brassGain * BRASS_IN_SHOTS * perShot,
+    value: value + brassGain * BRASS_IN_SHOTS * (perShot / hp),
     consumed,
-    perShot,
+    perShot: perShot / hp,
   }
 }
 
@@ -284,13 +327,31 @@ const PLANS: PlanFn[] = [
 ]
 
 /** 최선 구성 — **피해 기준**으로 고른다. 탄약 수지는 고른 뒤에 따로 센다 */
-function bestThroughput(l: Loadout, seed: number, passive: boolean): Tp {
+function bestThroughput(l: Loadout, seed: number, passive: boolean, hp: number): Tp {
   let best: Tp = { value: 0, consumed: 0, perShot: 0 }
   for (const make of PLANS) {
-    const v = throughput(l, make, seed, passive)
+    const v = throughput(l, make, seed, passive, hp)
     if (v.value > best.value) best = v
   }
   return best
+}
+
+/**
+ * 기준선 캐시 — '그 칸만 비운' 처리량은 그 칸의 **모든 아이템에 대해 같다**.
+ * 아이템마다 다시 재면 일이 정확히 두 배가 된다.
+ * 키는 (부위, 조합 번호, 패시브, HP). 눈금이 바뀌면 무효가 되므로 튜너가 비운다.
+ */
+const baseCache = new Map<string, Tp>()
+export function clearBaseCache(): void {
+  baseCache.clear()
+}
+function baselineFor(slot: string, c: Ctx, passive: boolean, hp: number, l: Loadout): Tp {
+  const k = slot + '|' + c.seed + '|' + (passive ? 1 : 0) + '|' + hp
+  const hit = baseCache.get(k)
+  if (hit !== undefined) return hit
+  const v = bestThroughput(l, c.seed, passive, hp)
+  baseCache.set(k, v)
+  return v
 }
 
 // ---------------------------------------------------------------------------
@@ -321,17 +382,19 @@ export function valueOfAttachment(a: Attachment, ctxs?: Ctx[]): ItemValue {
   let live = 0
   for (const c of list) {
     for (const passive of [false, true]) {
-      const pw = c.weight * (passive ? P_PASSIVE : 1 - P_PASSIVE)
-      const base = bestThroughput(withItem(c.loadout, null), c.seed, passive)
-      const withA = bestThroughput(withItem(c.loadout, a), c.seed, passive)
-      if (base.value <= 0) continue
-      // ① 피해 증가율
-      const dmgLift = (withA.value - base.value) / base.value
-      // ② 아낀 특수탄 — 없을 때보다 덜 썼으면 그만큼 다음 전투의 화력이다
-      const ammoLift = ((base.consumed - withA.consumed) * SAVED_IN_SHOTS * base.perShot) / base.value
-      num += pw * (dmgLift + ammoLift) * 100
-      den += pw
-      if (dmgLift + ammoLift > 0.0005) live += pw
+      for (const hp of HP_LEVELS) {
+        const pw = (c.weight * (passive ? P_PASSIVE : 1 - P_PASSIVE)) / HP_LEVELS.length
+        const base = baselineFor(slot, c, passive, hp, withItem(c.loadout, null))
+        const withA = bestThroughput(withItem(c.loadout, a), c.seed, passive, hp)
+        if (base.value <= 0) continue
+        // ① 피해 증가율
+        const dmgLift = (withA.value - base.value) / base.value
+        // ② 아낀 특수탄 — 없을 때보다 덜 썼으면 그만큼 다음 전투의 화력이다
+        const ammoLift = ((base.consumed - withA.consumed) * SAVED_IN_SHOTS * base.perShot) / base.value
+        num += pw * (dmgLift + ammoLift) * 100
+        den += pw
+        if (dmgLift + ammoLift > 0.0005) live += pw
+      }
     }
   }
   return {
@@ -352,8 +415,12 @@ export function valueOfAttachment(a: Attachment, ctxs?: Ctx[]): ItemValue {
  *   자리는 전부 시도해 최선을 취한다 — 어디에 넣을지가 이 게임의 결정이므로,
  *   최선의 자리를 주지 않으면 탄이 아니라 플레이어의 실수를 재게 된다.
  */
-function magDamage(l: Loadout, plan: Round[], seed: number, passive: boolean): number {
-  const s = cloneState(stateFor(l, seed, passive))
+/**
+ * 탄 값은 '킬 속도' 가 아니라 **그 자리가 몇 배가 되는가** 이므로 표적을 죽이지 않는다.
+ * 오버킬로 잘리면 센 탄일수록 값이 깎여 비교가 뒤집힌다.
+ */
+function magDamage(l: Loadout, plan: Round[], seed: number, passive: boolean, hp = 1e12): number {
+  const s = cloneState(stateFor(l, seed, passive, hp))
   const d0 = s.distance
   const K = Math.min(2, actionBudget(s))
   let mags = 0
@@ -380,7 +447,7 @@ export function valueOfRound(id: string, ctxs?: Ctx[]): ItemValue {
     for (const passive of [false, true]) {
       const pw = c.weight * (passive ? P_PASSIVE : 1 - P_PASSIVE)
       const l: Loadout = { ...c.loadout, specials: { [id]: 3 }, rails: c.loadout.rails.slice(), stash: [] }
-      const cap = stateFor(l, c.seed, passive).cap
+      const cap = stateFor(l, c.seed, passive, 1e12).cap
       const base = magDamage(l, basics(cap), c.seed, passive)
       if (base <= 0) continue
       const per = base / cap // 기본탄 한 발의 값
@@ -421,7 +488,7 @@ export function coverage(ids: string[], ctxs: Ctx[]): { winner: Record<string, n
   const winner: Record<string, number> = {}
   for (const c of ctxs) {
     const l: Loadout = { ...c.loadout, rails: c.loadout.rails.slice(), stash: [] }
-    const cap = stateFor(l, c.seed, false).cap
+    const cap = stateFor(l, c.seed, false, 1e12).cap
     let bestId = ''
     let bestV = -Infinity
     for (const id of ids) {
@@ -501,4 +568,39 @@ export function steadyHeat(ids: string[], l: Loadout): number {
     fire(s, plan.slice(0, cap))
   }
   return s.heatStartBase
+}
+
+/**
+ * 밴드의 바닥 못을 **잰다**: 탄창 용량을 한 칸 늘렸을 때의 처리량 증가율(%).
+ *   "일반 부착물 한 장 = 탄창에 기본탄 한 발" 이라는 규칙은 그대로 두고, 그 한 발이
+ *   이 지표에서 몇 %인지는 카탈로그가 아니라 게임의 산수(온도 누적)가 정한다.
+ */
+export function measureAttachAnchor(ctxs: Ctx[]): number {
+  let num = 0
+  let den = 0
+  for (const c of ctxs) {
+    for (const passive of [false, true]) {
+      const pw = c.weight * (passive ? P_PASSIVE : 1 - P_PASSIVE)
+      const base = bestThroughput(c.loadout, c.seed, passive, HP_LEVELS[1]!)
+      if (base.value <= 0) continue
+      // 용량만 +1 인 가상의 탄창을 끼운다 — 다른 보정은 일절 없다
+      const plus: Loadout = {
+        ...c.loadout,
+        rails: c.loadout.rails.slice(),
+        stash: [],
+        magazine: {
+          id: '__anchor',
+          name: '기준',
+          slot: 'magazine',
+          rarity: 'common',
+          text: '',
+          mag: { cap: (c.loadout.magazine?.mag?.cap ?? 5) + 1 },
+        },
+      }
+      const up = bestThroughput(plus, c.seed, passive, HP_LEVELS[1]!)
+      num += pw * ((up.value - base.value) / base.value) * 100
+      den += pw
+    }
+  }
+  return den > 0 ? num / den : 0
 }
