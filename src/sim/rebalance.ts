@@ -21,6 +21,7 @@ import * as bands from './bands'
 import {
   type Ctx,
   clearBaseCache,
+  measureActionAnchor,
   measureAttachAnchor,
   type ItemValue,
   coverage,
@@ -194,6 +195,8 @@ function sync(): void {
  * (안 내리면 표준이 영원히 0.0 이고 나머지 탄창은 전부 미달로 찍힌다.)
  */
 function bandFor(slot: string, rarity: Rarity): Band {
+  // 개머리판은 축이 다르다 — 화력이 아니라 사격 횟수를 바꾼다
+  if (slot === 'stock') return bands.STOCK_BANDS[rarity]
   if (slot !== 'magazine') return bands.ATTACH_BANDS[rarity]
   const base = bands.ATTACH_BANDS.common.mid
   const b = bands.ATTACH_BANDS[rarity]
@@ -516,7 +519,9 @@ function main(): void {
   //   카탈로그 전체의 화력이 움직였다는 신호이지, 밴드를 따라 옮기라는 뜻이 아니다.
   const anchor = bands.ANCHOR.attach
   const live = measureAttachAnchor(ctxFor('barrel'))
-  out('바닥 못(고정) +' + anchor.toFixed(1) + '%   ·   지금 카탈로그 실측 +' + live.toFixed(1) + '%  (진단용)')
+  const liveAct = measureActionAnchor(ctxFor('stock'))
+  out('바닥 못(고정)  화력축 +' + anchor.toFixed(1) + '%  ·  경제축 +' + bands.ANCHOR.stock.toFixed(1) + '%')
+  out('  지금 카탈로그 실측  화력축 +' + live.toFixed(1) + '%  ·  경제축 +' + liveAct.toFixed(1) + '%  (진단용)')
   out('')
   out(bands.report())
   out('')

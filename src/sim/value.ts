@@ -614,3 +614,48 @@ export function measureAttachAnchor(ctxs: Ctx[]): number {
   }
   return den > 0 ? num / den : 0
 }
+
+/**
+ * 경제 축의 바닥 못 — **사격 한 번어치**.
+ *
+ *   개머리판은 화력이 아니라 '몇 번 쏘느냐' 를 바꾼다. 그런데 밴드의 못은
+ *   '탄창에 기본탄 한 발'(=화력 축) 이었다. 두 축은 값이 근본적으로 다르다:
+ *   탄창 한 발은 온도 램프를 타고 곱해지지만, 사격 한 번은 선형이다.
+ *
+ *   화력 축 못으로 개머리판을 재면 어떤 수를 넣어도 미달이 된다. 실측이 그랬다 —
+ *   튜너가 고정 개머리판 +14m · 황동 부적 탄피 +40/발 · 참회의 사슬 DMG 343
+ *   까지 밀고도 일곱 장 전부 밴드 아래였다. 카드가 약한 게 아니라 자가 안 맞는다.
+ *
+ *   그래서 이 축에는 이 축의 못을 쓴다: 사격을 정확히 한 번 더 할 수 있게 하는
+ *   것(시작 거리 +사격비용)이 처리량을 몇 % 올리는가.
+ */
+export function measureActionAnchor(ctxs: Ctx[]): number {
+  let num = 0
+  let den = 0
+  for (const c of ctxs) {
+    for (const passive of [false, true]) {
+      const pw = c.weight * (passive ? P_PASSIVE : 1 - P_PASSIVE)
+      const probe = stateFor(c.loadout, c.seed, passive, HP_LEVELS[1]!)
+      const base = bestThroughput(c.loadout, c.seed, passive, HP_LEVELS[1]!)
+      if (base.value <= 0) continue
+      // 사격 비용만큼 시작 거리를 준다 = 정확히 사격 1회분
+      const plus: Loadout = {
+        ...c.loadout,
+        rails: c.loadout.rails.slice(),
+        stash: [],
+        stock: {
+          id: '__action',
+          name: '기준',
+          slot: 'stock',
+          rarity: 'common',
+          text: '',
+          mods: { startDist: probe.fireCost },
+        },
+      }
+      const up = bestThroughput(plus, c.seed, passive, HP_LEVELS[1]!)
+      num += pw * ((up.value - base.value) / base.value) * 100
+      den += pw
+    }
+  }
+  return den > 0 ? num / den : 0
+}

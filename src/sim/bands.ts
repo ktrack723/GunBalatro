@@ -59,7 +59,26 @@ export const STEP = 1.6
  *    '조금' 나은 정도면 아무도 아껴 쓸 이유가 없다 — 명확히 넘어야 한다.
  *    4배는 '한 발로 한 탄창의 8할' 이라는 체감의 하한이다.
  */
-export const ANCHOR = { attach: 171.2, round: 4.0 }
+export const ANCHOR = {
+  /** 화력 축 (총열·덮개·광학·탄창) — 탄창에 기본탄 한 발어치 */
+  attach: 171.2,
+  /**
+   * 경제 축 (개머리판) — **사격 한 번어치**.
+   *   개머리판은 화력이 아니라 사격 횟수를 바꾼다. 탄창 한 발은 온도 램프를 타고
+   *   곱해지지만 사격 한 번은 선형이라, 두 축의 '한 장어치' 가 근본적으로 다르다.
+   *   화력 축 못으로 재면 어떤 수를 넣어도 미달이다 — 실측에서 튜너가 고정
+   *   개머리판을 +14m, 황동 부적을 탄피 +40/발, 참회의 사슬을 DMG 343 까지 밀고도
+   *   일곱 장 전부 밴드 아래였다. 자가 안 맞는 것이지 카드가 약한 것이 아니다.
+   *
+   *   34.3 은 이렇게 얻었다. 두 못을 **같은 카탈로그 상태에서 동시에** 재면
+   *   화력축 90.3% · 경제축 18.1% 로 비 0.200 이 나온다. 이 비는 게임 구조의
+   *   성질(온도가 탄창 안에서 누적되고 사격 사이에는 26%만 이월된다)이지 카탈로그의
+   *   성질이 아니다. 절대 눈금은 못 박힌 화력축에서 가져온다: 171.2 × 0.200 = 34.3.
+   */
+  stock: 34.3,
+  /** 탄 — 기본탄 4발어치 */
+  round: 4.0,
+}
 
 /**
  * 못을 바꿔 밴드를 다시 세운다. **평상시에는 부르지 않는다** — 위 주석의 이유로
@@ -88,6 +107,15 @@ function ladder(anchor: number): Record<Rarity, Band> {
 }
 
 export let ATTACH_BANDS = ladder(ANCHOR.attach)
+/** 개머리판 전용 밴드 — 경제 축의 못에서 세운다 */
+export let STOCK_BANDS = ladder(ANCHOR.stock)
+
+/** 경제 축 못을 바꿔 개머리판 밴드를 다시 세운다 (평상시에는 부르지 않는다) */
+export function setStockAnchor(v: number): void {
+  if (!Number.isFinite(v) || v <= 0) return
+  ANCHOR.stock = v
+  STOCK_BANDS = ladder(ANCHOR.stock)
+}
 export const ROUND_BANDS = ladder(ANCHOR.round)
 
 // ---------------------------------------------------------------------------
