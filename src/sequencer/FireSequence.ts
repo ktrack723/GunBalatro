@@ -17,6 +17,18 @@ import { add } from '../ui/dom'
 import { dur, easeIn, easeOut, easeOutBack, tween, wait } from './tween'
 import { sfx, sfxRoundIn, sfxShot } from '../audio/Sfx'
 
+/** 한 발을 탄창에 밀어 넣는 데 걸리는 시간 */
+const INSERT_MS = 120
+/** 그 소리를 얼마나 앞당길 것인가 (실측: 트윈 끝에 울리면 0.1초 늦게 들렸다) */
+const INSERT_LEAD_MS = 100
+/**
+ * 앞당길 시간을 **이징된 진행도**로 환산한 값.
+ *   트윈 콜백이 받는 것은 원시 시간 t 가 아니라 easeOutBack(t) 이므로,
+ *   원시 시점 (1 − lead/dur) 에 해당하는 이징 값을 미리 구해 문턱으로 쓴다.
+ *   easeOutBack 은 되튐 정점까지 단조 증가라 이 문턱을 정확히 한 번 넘는다.
+ */
+const INSERT_SOUND_AT = easeOutBack(Math.max(0, 1 - INSERT_LEAD_MS / INSERT_MS))
+
 export interface SeqDeps {
   view: CombatView
   scene: GameScene
@@ -116,11 +128,28 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   // ③ 삽탄 — 한 발마다 탁. 마지막 탄부터 넣는다(FILO)
   caption.textContent = '삽탄 — 마지막 탄부터'
   for (let k = plan.length - 1; k >= 0; k -= 1) {
-    await tween(dur(120, sp), (t) => gun.setRoundInsert(k, t), easeOutBack)
+    // 소리는 **트윈이 끝나기 전에** 울린다. 예전에는 트윈이 다 끝난 뒤에 울려서
+    //   그림보다 한 박자 늦게 들렸다 — 탄은 이미 들어갔는데 소리가 따라왔다.
+    //   INSERT_LEAD_MS 만큼 앞당긴 시점을 이징된 진행도로 환산해 그 지점에서 낸다
+    //   (트윈 콜백은 원시 시간이 아니라 이징된 값을 받는다).
+    let rang = false
+    const ring = (): void => {
+      if (rang) return
+      rang = true
+      // 발마다 피치를 조금씩 흔든다 — 같은 소리가 연달아 나도 기계 반복으로 안 들린다
+      sfxRoundIn(0.94 + ((plan.length - k) % 4) * 0.045)
+      d.haptic('light')
+    }
+    await tween(
+      dur(INSERT_MS, sp),
+      (t) => {
+        gun.setRoundInsert(k, t)
+        if (t >= INSERT_SOUND_AT) ring()
+      },
+      easeOutBack,
+    )
     gun.setRoundInsert(k, 1)
-    // 한 발 넣을 때마다 녹음된 삽탄음. 발마다 피치를 조금씩 흔든다
-    sfxRoundIn(0.94 + ((plan.length - k) % 4) * 0.045)
-    d.haptic('light')
+    ring() // 스킵으로 콜백이 곧장 1 로 온 경우에도 한 번은 반드시 운다
     await wait(80, sp)
   }
   await wait(90, sp)
