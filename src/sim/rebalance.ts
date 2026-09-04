@@ -150,6 +150,20 @@ const PAYLOAD: Record<string, Payload> = {
 /** 눈금이 아예 없는 카드 — 규칙 자체가 값이라 수치로 못 민다 */
 const STRUCTURAL = new Set(['mg_standard'])
 
+/**
+ * 눈금이 원래 값에서 벗어날 수 있는 최대 배수.
+ *
+ *   이게 없으면 튜너가 무한정 키운다. 조건이 드물게 켜지는 카드(두 발의 계율은
+ *   발동률 16%)는 평균값이 목표에 잘 안 닿는데, 이분법은 닿을 때까지 배수를
+ *   1.7^9 = 118배까지 벌린다. 그걸 7패스 반복하면 10^14 배가 되고, 실측에서
+ *   여섯 장이 10^10 % 로 폭주했다 (증축 탄창 847억%).
+ *
+ *   ±8배 안에서 밴드에 못 닿는다면 그건 **눈금이 모자란 게 아니라 카드의 형태가
+ *   틀린 것**이다 — 조건이 너무 까다롭거나 효과의 축이 잘못됐다. 숫자를 더 키우는
+ *   대신 그 사실을 리포트로 알린다.
+ */
+const CLAMP = 8
+
 // ---------------------------------------------------------------------------
 function knob(id: string, key: string): { get(): number; set(v: number): void } | null {
   const ta = TA as unknown as Record<string, Record<string, number> | undefined>
@@ -158,6 +172,13 @@ function knob(id: string, key: string): { get(): number; set(v: number): void } 
   if (g === undefined || typeof g[key] !== 'number') return null
   return { get: () => g[key] as number, set: (v) => { g[key] = v } }
 }
+
+/** 세션 시작 시점의 눈금 — 절대 상한의 기준 */
+const ORIGIN: Record<string, number> = (() => {
+  const o: Record<string, number> = {}
+  for (const k of allKnobs()) o[k.path] = k.get()
+  return o
+})()
 
 function sync(): void {
   syncSpecials()
@@ -217,15 +238,19 @@ function targetOf(v: ItemValue): Band {
  * 값이 m 에 대해 단조 증가라는 가정을 쓰는데, 조건부 카드도 페이로드는 단조다
  * (조건이 켜지는 빈도는 임계가 정하고 임계는 안 건드린다).
  */
-function tuneItem(v: ItemValue): { from: string; to: string; before: number; after: number } | null {
+function tuneItem(v: ItemValue): { from: string; to: string; before: number; after: number; pinned: boolean } | null {
   const p = PAYLOAD[v.id]
   if (p === undefined || STRUCTURAL.has(v.id)) return null
   const refs = p.keys.map((k) => knob(v.id, k)).filter((x): x is NonNullable<typeof x> => x !== null)
   if (refs.length === 0) return null
   const base = refs.map((r) => r.get())
   const from = base.map((b) => String(round3(b))).join('/')
+  // 설계 원본(= 이 세션이 시작할 때의 값)에서 ±CLAMP 배를 넘지 않는다
+  const origin = refs.map((r, i) => ORIGIN[v.id + '.' + p.keys[i]!] ?? base[i]!)
+  let pinned = false
 
   const apply = (m: number): void => {
+    pinned = false
     refs.forEach((r, i) => {
       let nv = base[i]! * m
       if (p.int === true) nv = Math.round(nv)
@@ -233,6 +258,15 @@ function tuneItem(v: ItemValue): { from: string; to: string; before: number; aft
       if (p.max !== undefined) nv = Math.min(p.max, nv)
       const b = p.bounds?.[p.keys[i]!]
       if (b !== undefined) nv = Math.min(b[1], Math.max(b[0], nv))
+      // 절대 상한 — 원본의 ±CLAMP 배
+      const o = origin[i]!
+      if (o !== 0) {
+        const lo2 = Math.min(o / CLAMP, o * CLAMP)
+        const hi2 = Math.max(o / CLAMP, o * CLAMP)
+        const cl = Math.min(hi2, Math.max(lo2, nv))
+        if (cl !== nv) pinned = true
+        nv = cl
+      }
       r.set(round3(nv))
     })
     sync()
@@ -271,7 +305,7 @@ function tuneItem(v: ItemValue): { from: string; to: string; before: number; aft
     const mBest = Math.abs(vLo - target) < Math.abs(vHi - target) ? lo : hi
     apply(mBest)
     const after = measureOne(v.id)
-    return { from, to: refs.map((r) => String(round3(r.get()))).join('/'), before: v.value, after }
+    return { from, to: refs.map((r) => String(round3(r.get()))).join('/'), before: v.value, after, pinned }
   }
   for (let i = 0; i < 11; i += 1) {
     const mid = Math.sqrt(lo * hi)
@@ -287,7 +321,7 @@ function tuneItem(v: ItemValue): { from: string; to: string; before: number; aft
   const mFinal = Math.sqrt(lo * hi)
   apply(mFinal)
   const after = measureOne(v.id)
-  return { from, to: refs.map((r) => String(round3(r.get()))).join('/'), before: v.value, after }
+  return { from, to: refs.map((r) => String(round3(r.get()))).join('/'), before: v.value, after, pinned }
 }
 
 /**
@@ -455,8 +489,8 @@ function main(): void {
       const r = tuneItem(v)
       if (r === null) continue
       out(
-        '   ' + pad(v.name, 16) + padS(f1(r.before), 8) + ' → ' + padS(f1(r.after), 8) +
-          '   눈금 ' + pad(r.from, 16) + ' → ' + r.to,
+        '   ' + pad(v.name, 16) + padS(f1(r.before), 10) + ' → ' + padS(f1(r.after), 10) +
+          '   눈금 ' + pad(r.from, 16) + ' → ' + pad(r.to, 16) + (r.pinned ? '  ⚠ 한계' : ''),
       )
     }
     out('')
