@@ -493,8 +493,47 @@ export const HP_GROWTH = 1.91
 export const HP_ENDLESS_GROWTH = 2.4
 export const NODE_MUL = { small: 1.0, big: 1.8, boss: 2.2 } as const
 
+/**
+ * 위험도 배수 — **런 후반의 값**이다. 초반에는 아래 램프로 깎아서 쓴다.
+ *
+ * 왜 램프가 필요한가:
+ *   이 값들은 섹터와 무관한 고정 배수였다. 그런데 플레이어의 힘은 부착물에서 나오고,
+ *   섹터 1 에는 부착물이 **0개**다. 같은 ×3.7 이 섹터 6 에서는 도전이지만 섹터 1
+ *   에서는 산수로 불가능하다.
+ *
+ *   실측(섹터 1 · 시작 장비 · 최적 플레이 전탐색): 위험도 3 은 적×패시브 70 조합 중
+ *   **65 조합을 이길 수 없다.** 패시브가 없어도 배회자 89% · 비대체 49% 로,
+ *   최선을 다해도 적을 못 죽인다. 갈림길이 선택이 아니라 사망 선고였다.
+ *   (같은 조건에서 HP ×1.35 · 속도 +0 이면 70/70 전부 이길 수 있다.)
+ */
 export const THREAT_HP_MUL: Record<Threat, number> = { 1: 1.05, 2: 1.35, 3: 3.7 }
 export const THREAT_SPEED_ADD: Record<Threat, number> = { 1: 0, 2: 1, 3: 2 }
+
+/** 램프 시작값 — 섹터 1 에서 위험도 3 이 ×1.35 가 되도록 잡았다 (1 + 2.7×0.13) */
+export const THREAT_RAMP_START = 0.13
+/** 이 섹터부터 표의 값이 그대로 걸린다 */
+export const THREAT_RAMP_FULL = 6
+
+/** 섹터에 따른 위험도 램프 (0~1) */
+export function threatRamp(sector: number): number {
+  const s = Math.max(1, Math.floor(sector))
+  const t = (s - 1) / (THREAT_RAMP_FULL - 1)
+  return Math.min(1, THREAT_RAMP_START + (1 - THREAT_RAMP_START) * t)
+}
+
+/** 그 섹터에서 실제로 걸리는 HP 배수 */
+export function threatHpMul(threat: Threat, sector: number): number {
+  return 1 + (THREAT_HP_MUL[threat] - 1) * threatRamp(sector)
+}
+
+/**
+ * 그 섹터에서 실제로 걸리는 속도 증가.
+ *   속도는 곧 **행동 수**라 초반에 두 배로 아프다 — 부착물이 없으면 거리를 살 수단이
+ *   없기 때문이다. HP 와 같은 램프를 태우고 정수로 떨어뜨린다.
+ */
+export function threatSpeedAdd(threat: Threat, sector: number): number {
+  return Math.round(THREAT_SPEED_ADD[threat] * threatRamp(sector))
+}
 export const THREAT_BRASS: Record<Threat, number> = { 1: 0, 2: 15, 3: 35 }
 /** [common, uncommon, rare, relic] */
 export const THREAT_RARITY_W: Record<Threat, [number, number, number, number]> = {

@@ -16,8 +16,8 @@ import {
   HP_BASE,
   HP_ENDLESS_GROWTH,
   HP_GROWTH,
-  THREAT_HP_MUL,
-  THREAT_SPEED_ADD,
+  threatHpMul,
+  threatSpeedAdd,
 } from '../types'
 
 // ---------------------------------------------------------------------------
@@ -370,9 +370,9 @@ export function makeEnemy(opts: {
   // 엔드리스 여부는 섹터 번호가 곧 답이다 (섹터 9+ == 엔드리스 구간).
   const base = baseHp(opts.sector, opts.nodeMul, opts.sector > LAST_SECTOR)
   const stakeMul = opts.stakeHpMul ?? 1
-  const hp = Math.max(1, Math.round(base * arch.hpMul * THREAT_HP_MUL[opts.threat] * stakeMul))
+  const hp = Math.max(1, Math.round(base * arch.hpMul * threatHpMul(opts.threat, opts.sector) * stakeMul))
 
-  const speed = arch.speed + THREAT_SPEED_ADD[opts.threat]
+  const speed = arch.speed + threatSpeedAdd(opts.threat, opts.sector)
 
   return {
     archetype: arch,
