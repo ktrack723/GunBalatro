@@ -75,8 +75,8 @@ const PAYLOAD: Record<string, Payload> = {
   sp_purge: { keys: ['dmg', 'mul'], bounds: { mul: [4, 40] } },
   // 힘이 '다음 탄 배수' 라는 규칙에 있다. dmg 로 밴드를 맞추면 26 → 203 이 되어
   // 다른 카드가 된다 — 배수 자체를 민다.
-  sp_sanctified: { keys: ['mult'], min: 1.2, max: 6 },
-  sp_cascade: { keys: ['mult'], min: 1.2, max: 6 },
+  sp_sanctified: { keys: ['mult'], min: 1.2, max: 12 },
+  sp_cascade: { keys: ['mult', 'heat'], bounds: { mult: [1.2, 6] } },
   sp_breach: { keys: ['dmg'] },
   sp_solitary: { keys: ['bonus'] },
   sp_firststrike: { keys: ['bonus'] },
@@ -133,7 +133,7 @@ const PAYLOAD: Record<string, Payload> = {
   st_penance: { keys: ['dmg'] },
   st_reliquary: { keys: ['startDist'], int: true, min: 1, max: 16 },
   st_stride: { keys: ['enemySpeed'], int: true, min: -3, max: -1 },
-  st_bandolier: { keys: ['max'], int: true, min: 1, max: 6 },
+  st_bandolier: { keys: ['max', 'perMag'], int: true, min: 1, max: 8 },
   st_glacier: { keys: ['dmg'] },
 
   // --- 탄창: 용량은 성격이므로 고정하고, 얹는 값만 움직인다 ---
