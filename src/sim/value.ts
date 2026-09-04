@@ -419,10 +419,13 @@ export function valueOfAttachment(a: Attachment, ctxs?: Ctx[]): ItemValue {
  * 탄 값은 '킬 속도' 가 아니라 **그 자리가 몇 배가 되는가** 이므로 표적을 죽이지 않는다.
  * 오버킬로 잘리면 센 탄일수록 값이 깎여 비교가 뒤집힌다.
  */
+/** 탄을 재는 지평선 — 다음 사격에 남는 효과(취약·감속·이월)를 잡으려면 2탄창이 필요하다 */
+const MAG_HORIZON = 2
+
 function magDamage(l: Loadout, plan: Round[], seed: number, passive: boolean, hp = 1e12): number {
   const s = cloneState(stateFor(l, seed, passive, hp))
   const d0 = s.distance
-  const K = Math.min(2, actionBudget(s))
+  const K = Math.min(MAG_HORIZON, actionBudget(s))
   let mags = 0
   for (let k = 0; k < K; k += 1) {
     // 2탄창 지평선: 첫 탄창에 재려는 탄을 넣고, 다음 탄창은 기본탄으로 채운다.
@@ -450,7 +453,11 @@ export function valueOfRound(id: string, ctxs?: Ctx[]): ItemValue {
       const cap = stateFor(l, c.seed, passive, 1e12).cap
       const base = magDamage(l, basics(cap), c.seed, passive)
       if (base <= 0) continue
-      const per = base / cap // 기본탄 한 발의 값
+      // 기본탄 한 발의 값. magDamage 는 **2탄창**을 쏘므로 발수는 cap 이 아니라 2·cap 이다.
+      //   cap 으로 나누면 모든 탄 값이 정확히 2배 부풀려진다 — 실측으로 잡았다:
+      //   맨총에서 순증이 0 인 소이탄(DMG 1 · 온도 +0.81)이 4.6배로 찍히고 있었다.
+      const shots = cap * MAG_HORIZON
+      const per = base / shots
       let best = base
       for (let pos = 0; pos < cap; pos += 1) {
         const plan = basics(cap)
