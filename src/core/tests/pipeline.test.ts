@@ -4,6 +4,7 @@
 // ============================================================================
 import { describe, expect, it } from 'vitest'
 import type { Attachment, EnemyInstance, Loadout, Round } from '../types'
+import { TR } from '../data/tuning'
 import { BASIC_DMG, BASIC_HEAT, HP_BASE, HP_GROWTH, NODE_MUL, RAIL_ACCEPTS } from '../types'
 import { makeRng } from '../rng'
 import { ATTACHMENTS, ATT_BY_ID, STARTER_MAGAZINE } from '../data/attachments'
@@ -102,20 +103,23 @@ describe('특수탄', () => {
     expect(s.distance).toBe(before + 3 - s.fireCost)
   })
 
-  // 아래 두 상수는 specials.ts 의 값과 **의도적으로 묶여 있다.**
-  // 밸런스 조정으로 숫자가 바뀌면 여기서 터져야 한다 — 조용히 지나가면
-  // '기능은 살아 있는데 값이 사라진' 회귀를 못 잡는다.
-  it('점착탄은 이후 탄의 데미지를 올린다 (+10)', () => {
+  // 예전에는 여기에 숫자를 그대로 박아, 밸런스가 바뀌면 터지게 해 두었다.
+  // 이제 수치는 data/tuning.ts 한 곳에 있고 그 변경은 diff 로 드러난다 —
+  // 그래서 검정의 대상이 '값' 에서 **배선** 으로 옮겨간다: 표의 값이 실제로
+  // 파이프라인까지 흘러가는가. 값을 표에서 읽으므로 조정에는 견디고,
+  // 훅이 죽거나 잘못된 값을 쓰면 그때 터진다.
+  it('점착탄은 표에 적힌 만큼 이후 탄의 데미지를 올린다', () => {
     const l = loadout([], { sp_adhesive: 1 })
     const { shots } = shoot(l, [makeRound('sp_adhesive'), basicRound()])
-    expect(shots[1].dmg).toBe(BASIC_DMG + 10)
+    // 파이프라인은 표시 직전에 반올림한다 (dmg: Math.round)
+    expect(shots[1].dmg).toBe(Math.round(BASIC_DMG + TR.sp_adhesive.bonus))
   })
 
-  it('표식탄은 적을 취약하게 만든다 (+42%)', () => {
+  it('표식탄은 표에 적힌 만큼 적을 취약하게 만든다', () => {
     const l = loadout([], { sp_marker: 1 })
     const s = startCombat(l, dummy(), makeRng(3))
     fire(s, [makeRound('sp_marker'), basicRound()])
-    expect(s.enemy.vuln).toBeCloseTo(0.42, 6)
+    expect(s.enemy.vuln).toBeCloseTo(TR.sp_marker.vuln, 6)
   })
 
   it('특수탄은 소모되고 기본탄은 무한하다', () => {
@@ -426,6 +430,46 @@ describe('유일탄', () => {
   })
 })
 
+describe('배수 래치 (성탄 · 연쇄 점화탄 · 이단심문관)', () => {
+  // doubleNext / heatDoublePending 는 boolean 이었고 배수 2 가 코드에 박혀 있었다.
+  // 배수를 눈금으로 빼면서 이 경로 전체가 새로 배선됐다 — 여기가 그 안전망이다.
+  it('성탄 다음의 기본탄은 표의 배수만큼 데미지를 받는다', () => {
+    const l = loadout([], { sp_sanctified: 1 })
+    const { shots } = shoot(l, [makeRound('sp_sanctified'), basicRound()])
+    expect(shots[1].dmg).toBe(BASIC_DMG * TR.sp_sanctified.mult)
+  })
+
+  it('훅이 있는 탄은 배수를 **한 번만** 받는다 (제곱이 되지 않는다)', () => {
+    // 훅 탄은 amp() 안에서 배수를 받는다. STEP5 가 또 곱하면 배수²이 된다.
+    const plain = shoot(loadout([], { sp_adhesive: 1 }), [makeRound('sp_adhesive')])
+    const doubled = shoot(loadout([], { sp_sanctified: 1, sp_adhesive: 1 }), [
+      makeRound('sp_sanctified'),
+      makeRound('sp_adhesive'),
+      basicRound(),
+    ])
+    // 점착탄이 뒤에 남긴 보너스가 배수의 제곱이 아니라 배수만큼만 커져야 한다
+    const m = TR.sp_sanctified.mult
+    const bonusPlain = TR.sp_adhesive.bonus
+    const after = doubled.shots[2]!.dmg - BASIC_DMG
+    expect(after).toBeLessThanOrEqual(Math.round(bonusPlain * m) + 1)
+    expect(plain.shots).toHaveLength(1)
+  })
+
+  it('배수 래치는 한 발만 쓰고 꺼진다', () => {
+    const l = loadout([], { sp_sanctified: 1 })
+    const { shots } = shoot(l, [makeRound('sp_sanctified'), basicRound(), basicRound()])
+    expect(shots[2].dmg).toBe(BASIC_DMG)
+  })
+
+  it('연쇄 점화탄은 남은 탄의 온도 획득을 표의 배수만큼 올린다', () => {
+    const base = shoot(loadout(), [basicRound(), basicRound()])
+    const casc = shoot(loadout([], { sp_cascade: 1 }), [makeRound('sp_cascade'), basicRound()])
+    const gainBase = base.shots[1]!.heatAfter - base.shots[1]!.heatBefore
+    const gainCasc = casc.shots[1]!.heatAfter - casc.shots[1]!.heatBefore
+    expect(gainCasc).toBeCloseTo(gainBase * TR.sp_cascade.mult, 5)
+  })
+})
+
 describe('심판탄', () => {
   it('겹칠수록 발당 가치가 떨어진다 (자기 증식하지 않는다)', () => {
     const l = loadout([], { sp_judgment: 2 })
@@ -433,8 +477,11 @@ describe('심판탄', () => {
     const hp0 = s.enemy.hp
     fire(s, [basicRound(), basicRound(), makeRound('sp_judgment'), makeRound('sp_judgment')])
     const dealt = hp0 - s.enemy.hp
-    // 두 번째가 첫 번째가 만든 추가 피해까지 다시 먹으면 총합이 폭발한다.
-    // magDamage 에 되먹이지 않으므로 그런 일이 없어야 한다.
-    expect(dealt).toBeLessThan(s.magDamage * 4)
+    // 추가 피해의 상한을 **눈금으로부터** 세운다: 두 발이 얹을 수 있는 최대는
+    // magDamage × mul × (1 + 반복감쇠 0.68) 이다. 그 이상이 나왔다면 두 번째가
+    // 첫 번째의 추가분까지 다시 먹었다는 뜻 — 반복 감쇠로도 못 막는 자기 증식이다.
+    // (상한을 4 로 박아 두면 mul 을 올리는 순간 증식과 구분되지 않는다.)
+    const extra = dealt - s.magDamage
+    expect(extra).toBeLessThanOrEqual(s.magDamage * TR.sp_judgment.mul * 1.68 * 1.02)
   })
 })

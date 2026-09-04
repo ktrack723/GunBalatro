@@ -81,8 +81,8 @@ export function startCombat(
     magDamage: 0,
     abortMag: false,
     pendingNextDmg: 0,
-    doubleNext: false,
-    heatDoublePending: false,
+    doubleNextMul: 1,
+    heatMulPending: 1,
     magDmgBonus: 0,
 
     vars: {},
@@ -180,8 +180,8 @@ export function fire(s: CombatState, planIn: Round[]): FireEvent[] {
   s.magDamage = 0
   s.abortMag = false
   s.pendingNextDmg = 0
-  s.doubleNext = false
-  s.heatDoublePending = false
+  s.doubleNextMul = 1
+  s.heatMulPending = 1
   s.magDmgBonus = 0
 
   // 온도 초기화. 이월(냉각 자켓)은 magEnd 에서 heatStartBase 에 반영해 둔다.

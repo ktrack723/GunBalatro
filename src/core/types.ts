@@ -293,10 +293,16 @@ export interface CombatState {
   abortMag: boolean
   /** 다음 탄에 적용할 데미지 보너스 */
   pendingNextDmg: number
-  /** 다음 탄의 효과 2배 (성탄) */
-  doubleNext: boolean
+  /**
+   * 다음 탄의 효과 배수 (1 = 없음). 성탄이 올린다.
+   * 예전에는 boolean 이라 배수가 코드에 2 로 박혀 있었다 — 그러면 성탄의 세기를
+   * 조절할 눈금이 없어, 밴드를 맞추려면 자기 DMG 를 26 → 203 으로 올릴 수밖에
+   * 없었다(그건 다른 카드가 된다). 배수 자체를 눈금으로 뺀다.
+   */
+  doubleNextMul: number
   /** 이번 탄창 남은 발사의 온도 획득 2배 */
-  heatDoublePending: boolean
+  /** 이번 탄창 남은 발사의 온도 획득 배수 (1 = 없음). 연쇄 점화탄·이단심문관이 올린다 */
+  heatMulPending: number
   /** 이번 탄창 동안 모든 탄에 얹히는 데미지 (점착탄 등) */
   magDmgBonus: number
 

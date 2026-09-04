@@ -163,15 +163,15 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
   if (typeof mul === 'number') heatGain *= mul
   const passive = s.enemy.passive
   if (passive?.modifyHeatGain !== undefined) heatGain = passive.modifyHeatGain(heatGain, ctx)
-  if (s.heatDoublePending) heatGain *= 2
+  if (s.heatMulPending > 1) heatGain *= s.heatMulPending
   // 성탄 래치. STEP7 의 훅이 전부 끝난 뒤에 꺼야 한다 —
-  // 여기서 바로 끄면 훅을 가진 특수탄(amp() 를 쓰는 12종)이 2배를 못 받고,
+  // 여기서 바로 끄면 훅을 가진 특수탄(amp() 를 쓰는 12종)이 배수를 못 받고,
   // 안 끄면 성탄 자신의 onAfterShot 이 다음 발까지 끌고 간다.
-  const wasDouble = s.doubleNext
-  // **훅이 없는 탄에만** 데미지 2배를 준다. 훅이 있는 탄은 자기 amp() 로 이미 2배를
-  // 받으므로, 여기서 또 곱하면 STEP5 위에 다시 곱해져 4배가 된다.
+  const wasDouble = s.doubleNextMul > 1
+  // **훅이 없는 탄에만** 데미지 배수를 준다. 훅이 있는 탄은 자기 amp() 로 이미 배수를
+  // 받으므로, 여기서 또 곱하면 STEP5 위에 다시 곱해져 제곱이 된다.
   if (wasDouble && (def === null || def.hooks === undefined)) {
-    dmg *= 2
+    dmg *= s.doubleNextMul
   }
 
   s.heat += heatGain
@@ -212,8 +212,8 @@ export function fireOneShot(s: CombatState, round: Round, index: number, plan: R
     safe(() => passive.onAfterShot?.(ctx), passive.id)
   }
 
-  // 성탄 래치 해제 — 이 발이 2배를 받았을 때만 끈다.
-  if (wasDouble) s.doubleNext = false
+  // 성탄 래치 해제 — 이 발이 배수를 받았을 때만 끈다.
+  if (wasDouble) s.doubleNextMul = 1
 
   // 적 속도가 바뀌었으면(냉각탄 등) 사격 비용을 **부착물 보정까지 포함해** 다시 잡는다.
   // 카드가 직접 fireCost 를 대입하면 간이 거리계·완충기 보정이 통째로 날아간다.

@@ -246,12 +246,12 @@ export const ATTACHMENTS: Attachment[] = [
     rarity: 'relic',
     // '남은 탄 2배' 뿐이면 특수탄이 마지막일 때 완전히 죽고, 기본탄만 있는
     // 탄창(실측 40.7%)에서도 0 이다. 유물이 커먼보다 약했다 — 바닥을 깔아준다.
-    text: '특수탄 HEAT ' + sg(TA.hg_inquisition.heat) + '. 특수탄을 쏘면 이번 탄창의 남은 탄 온도 획득 2배',
+    text: '특수탄 HEAT ' + sg(TA.hg_inquisition.heat) + '. 특수탄을 쏘면 이번 탄창의 남은 탄 온도 획득 ' + n(TA.hg_inquisition.mult) + '배',
     hooks: {
       onFire: (c) => { if (isSpecial(c)) { c.heatGain += TA.hg_inquisition.heat; proc(c) } },
       onAfterShot: (c) => {
         if (!isSpecial(c)) return
-        c.s.heatDoublePending = true
+        c.s.heatMulPending = Math.max(c.s.heatMulPending, TA.hg_inquisition.mult)
         proc(c)
       },
     },

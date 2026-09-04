@@ -14,12 +14,12 @@ function proc(c: FireCtx): void {
 }
 
 /**
- * 이 탄이 **스스로** 얹는 효과량. 성탄(doubleNext)이면 2배, 같은 탄을 겹쳤으면
+ * 이 탄이 **스스로** 얹는 효과량. 성탄이 걸려 있으면 그 배수만큼, 같은 탄을 겹쳤으면
  * 반복 감쇠(ctx.repeat)를 곱한다. 훅에 힘이 실린 탄은 전부 이 함수를 지나가므로,
  * 여기 한 곳에서 두 규칙이 동시에 걸린다.
  */
 function amp(c: FireCtx, v: number): number {
-  return (c.s.doubleNext ? v * 2 : v) * c.repeat
+  return v * c.s.doubleNextMul * c.repeat
 }
 
 export const SPECIALS: SpecialDef[] = [
@@ -144,7 +144,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_sanctified',
     name: '성탄',
-    text: '다음 탄의 효과가 2배가 된다',
+    text: '다음 탄의 효과가 ' + n(TR.sp_sanctified.mult) + '배가 된다',
     rarity: 'rare',
     dmg: TR.sp_sanctified.dmg,
     heat: TR.sp_sanctified.heat,
@@ -152,7 +152,7 @@ export const SPECIALS: SpecialDef[] = [
     color: '#f2e6c4',
     hooks: {
       onAfterShot(c) {
-        c.s.doubleNext = true
+        c.s.doubleNextMul = TR.sp_sanctified.mult
         proc(c)
       },
     },
@@ -160,7 +160,7 @@ export const SPECIALS: SpecialDef[] = [
   {
     id: 'sp_cascade',
     name: '연쇄 점화탄',
-    text: '이번 탄창의 남은 탄 온도 획득 2배',
+    text: '이번 탄창의 남은 탄 온도 획득 ' + n(TR.sp_cascade.mult) + '배',
     rarity: 'rare',
     dmg: TR.sp_cascade.dmg,
     heat: TR.sp_cascade.heat,
@@ -168,7 +168,7 @@ export const SPECIALS: SpecialDef[] = [
     color: '#ff5a2a',
     hooks: {
       onAfterShot(c) {
-        c.s.heatDoublePending = true
+        c.s.heatMulPending = Math.max(c.s.heatMulPending, TR.sp_cascade.mult)
         proc(c)
       },
     },

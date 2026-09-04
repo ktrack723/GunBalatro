@@ -49,6 +49,14 @@ interface Payload {
   /** 눈금의 하한/상한 — 넘으면 그 카드가 규칙을 깨뜨린다 */
   min?: number
   max?: number
+  /**
+   * 눈금별 상·하한. 여러 눈금을 같이 밀 때 **하나만** 묶어 둬야 하는 경우가 있다.
+   *   심판탄이 그렇다: 배수를 9.8 까지 올리면 두 번째 심판탄이 첫 번째가 만든
+   *   피해까지 먹어 겹칠수록 발당 가치가 **올라간다** — 반복 감쇠로도 못 막는
+   *   자기 증식이고, 테스트가 잡아낸 실제 설계 위반이다. 배수는 묶고 기본 DMG 가
+   *   나머지를 지게 한다.
+   */
+  bounds?: Record<string, [number, number]>
 }
 
 const PAYLOAD: Record<string, Payload> = {
@@ -61,14 +69,16 @@ const PAYLOAD: Record<string, Payload> = {
   sp_marker: { keys: ['vuln'] },
   sp_chill: { keys: ['dmg'] },
   sp_cryo: { keys: ['mul'] },
-  sp_purge: { keys: ['mul'] },
-  sp_sanctified: { keys: ['dmg'] },
-  sp_cascade: { keys: ['heat'] },
+  sp_purge: { keys: ['dmg', 'mul'], bounds: { mul: [4, 40] } },
+  // 힘이 '다음 탄 배수' 라는 규칙에 있다. dmg 로 밴드를 맞추면 26 → 203 이 되어
+  // 다른 카드가 된다 — 배수 자체를 민다.
+  sp_sanctified: { keys: ['mult'], min: 1.2, max: 6 },
+  sp_cascade: { keys: ['mult'], min: 1.2, max: 6 },
   sp_breach: { keys: ['dmg'] },
   sp_solitary: { keys: ['bonus'] },
   sp_firststrike: { keys: ['bonus'] },
   sp_singularity: { keys: ['mul'] },
-  sp_judgment: { keys: ['mul'] },
+  sp_judgment: { keys: ['dmg', 'mul'], bounds: { mul: [1.2, 3] } },
 
   // --- 총열 ---
   br_long: { keys: ['dmg'] },
@@ -93,7 +103,7 @@ const PAYLOAD: Record<string, Payload> = {
   hg_furnace: { keys: ['heat'] },
   hg_martyr: { keys: ['heat', 'step', 'max'] },
   hg_twoshot: { keys: ['heat'] },
-  hg_inquisition: { keys: ['heat'] },
+  hg_inquisition: { keys: ['mult'], min: 1.1, max: 4 },
 
   // --- 광학 ---
   op_laser: { keys: ['dmg'] },
@@ -125,11 +135,11 @@ const PAYLOAD: Record<string, Payload> = {
 
   // --- 탄창: 용량은 성격이므로 고정하고, 얹는 값만 움직인다 ---
   mg_drum: { keys: ['heatMul'], min: 0.4, max: 1.0 },
-  mg_precision: { keys: ['heat'] },
+  mg_precision: { keys: ['fireCost'], int: true, min: -2, max: 0 },
   mg_penitent: { keys: ['heat'] },
   mg_greed: { keys: ['keep'], min: 0.1, max: 0.85 },
   mg_coolant: { keys: ['carry'], min: 0.05, max: 0.5 },
-  mg_executioner: { keys: ['startHeat'], min: 2, max: 60 },
+  mg_executioner: { keys: ['startHeat'], min: 2, max: 90 },
   mg_annex: { keys: ['max'], int: true, min: 1, max: 6 },
   mg_unstable: { keys: ['heat'] },
   mg_belt: { keys: ['heatMul'], min: 0.4, max: 1.0 },
@@ -216,6 +226,8 @@ function tuneItem(v: ItemValue): { from: string; to: string; before: number; aft
       if (p.int === true) nv = Math.round(nv)
       if (p.min !== undefined) nv = Math.max(p.min, nv)
       if (p.max !== undefined) nv = Math.min(p.max, nv)
+      const b = p.bounds?.[p.keys[i]!]
+      if (b !== undefined) nv = Math.min(b[1], Math.max(b[0], nv))
       r.set(round3(nv))
     })
     sync()
@@ -273,10 +285,13 @@ function tuneItem(v: ItemValue): { from: string; to: string; before: number; aft
   return { from, to: refs.map((r) => String(round3(r.get()))).join('/'), before: v.value, after }
 }
 
+/**
+ * 카드에 찍히는 수는 읽히는 자리까지만 남긴다 — '+34.8' 보다 '+35' 가 카드다.
+ * 밴드 폭이 ±22% 라 이 정도 반올림은 판정을 바꾸지 않는다.
+ */
 function round3(v: number): number {
   const a = Math.abs(v)
-  if (a >= 100) return Math.round(v)
-  if (a >= 10) return Math.round(v * 10) / 10
+  if (a >= 10) return Math.round(v)
   if (a >= 1) return Math.round(v * 100) / 100
   return Math.round(v * 1000) / 1000
 }
