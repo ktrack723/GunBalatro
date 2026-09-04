@@ -99,8 +99,8 @@ describe('특수탄', () => {
     const s = startCombat(l, dummy(), makeRng(2))
     const before = s.distance
     fire(s, [makeRound('sp_shock')])
-    // 넉백 +3m 후 사격 비용만큼 전진 → 순변화는 3 - fireCost
-    expect(s.distance).toBe(before + 3 - s.fireCost)
+    // 넉백만큼 밀린 뒤 사격 비용만큼 전진 → 순변화는 (넉백 − 사격비용)
+    expect(s.distance).toBe(before + TR.sp_shock.knock - s.fireCost)
   })
 
   // 예전에는 여기에 숫자를 그대로 박아, 밸런스가 바뀌면 터지게 해 두었다.

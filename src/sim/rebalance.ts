@@ -234,6 +234,54 @@ function targetOf(v: ItemValue): Band {
 }
 
 /**
+ * 조건의 **임계**를 발동률로 맞춘다.
+ *
+ *   임계(thr)는 '성격' 이라 값 튜너가 건드리지 않는다. 그런데 조건이 아예 안 켜지면
+ *   그건 성격이 아니라 죽은 카드다 — 실측에서 피의 계약 2% · 임종의 조준경 5% ·
+ *   용광로 심장 6% · 총검 거치대 7% 가 그랬다. 페이로드를 아무리 키워도(피의 계약은
+ *   DMG 27,176 까지 갔다) 평균값은 안 오르고 켜지는 2%만 터무니없어진다.
+ *
+ *   목표는 발동률 50% 다 — '절반쯤 켜져야 조건이다'. 방향(≥ 인가 ≤ 인가)은 카드마다
+ *   다르므로 가정하지 않고, 배수 격자를 훑어 발동률이 0.5 에 가장 가까운 값을 고른다.
+ */
+const LIVE_TARGET = 0.5
+const THR_GRID = [0.2, 0.35, 0.5, 0.7, 1, 1.45, 2, 2.8, 4]
+
+function tuneThreshold(v: ItemValue): { from: number; to: number; live0: number; live1: number } | null {
+  const k = knob(v.id, 'thr')
+  if (k === null) return null
+  const orig = k.get()
+  if (orig === 0) return null
+  let bestV = orig
+  let bestLive = v.live
+  let bestErr = Math.abs(v.live - LIVE_TARGET)
+  for (const m of THR_GRID) {
+    const cand = round3(orig * m)
+    if (cand === orig) continue
+    k.set(cand)
+    sync()
+    const live = liveOf(v.id)
+    const err = Math.abs(live - LIVE_TARGET)
+    if (err < bestErr) {
+      bestErr = err
+      bestV = cand
+      bestLive = live
+    }
+  }
+  k.set(bestV)
+  sync()
+  return bestV === orig ? null : { from: orig, to: bestV, live0: v.live, live1: bestLive }
+}
+
+function liveOf(id: string): number {
+  const a = ATTACHMENTS.find((x) => x.id === id)
+  if (a !== undefined) return valueOfAttachment(a, ctxFor(a.slot)).live
+  const sp = SPECIALS.find((x) => x.id === id)
+  if (sp !== undefined) return valueOfRound(sp.id, roundCtx()).live
+  return 1
+}
+
+/**
  * 한 아이템을 밴드 중앙으로 민다 — 페이로드 눈금에 배수 m 을 걸고 이분법으로 찾는다.
  * 값이 m 에 대해 단조 증가라는 가정을 쓰는데, 조건부 카드도 페이로드는 단조다
  * (조건이 켜지는 빈도는 임계가 정하고 임계는 안 건드린다).
@@ -462,9 +510,13 @@ function main(): void {
   // 밴드의 바닥 못을 **잰다** — '탄창에 기본탄 한 발' 이 이 지표에서 몇 %인가.
   // 못은 아이템과 **같은 앙상블**에서, 그러나 **세션당 한 번만** 잰다.
   //   맨총에서 재면 단위가 어긋나고(33.9%), 패스마다 재면 발산한다.
-  const anchor = measureAttachAnchor(ctxFor('barrel'))
-  bands.setAttachAnchor(anchor)
-  out('바닥 못 실측: 탄창에 기본탄 +1발 = 처리량 +' + anchor.toFixed(1) + '%  → 일반 부착물의 중앙')
+  // 못은 **못 박힌 보정 상수**다 (bands.ANCHOR.attach). 자동으로 다시 재지 않는다 —
+  //   목표가 튜닝 대상의 함수가 되면 발산한다 (패스마다 재면 5억%, 세션마다 재도 2.3배).
+  //   지금 카탈로그에서의 값은 **진단용으로만** 찍는다: 못에서 크게 벌어졌다면
+  //   카탈로그 전체의 화력이 움직였다는 신호이지, 밴드를 따라 옮기라는 뜻이 아니다.
+  const anchor = bands.ANCHOR.attach
+  const live = measureAttachAnchor(ctxFor('barrel'))
+  out('바닥 못(고정) +' + anchor.toFixed(1) + '%   ·   지금 카탈로그 실측 +' + live.toFixed(1) + '%  (진단용)')
   out('')
   out(bands.report())
   out('')
@@ -483,6 +535,18 @@ function main(): void {
       return v.value < b.lo || v.value > b.hi
     })
     out('════ 패스 ' + pass + ' — 밴드 밖 ' + off.length + ' / ' + vals.length + '종 (못 ' + anchor.toFixed(0) + '%) ════')
+
+    // ① 먼저 **조건이 켜지게** 만든다. 안 켜지는 조건 위에서는 값을 아무리 밀어도
+    //    평균이 안 움직이고 켜지는 소수 상황만 터무니없어진다.
+    for (const v of vals) {
+      if (v.live >= 0.25 && v.live <= 0.9) continue
+      const t = tuneThreshold(v)
+      if (t === null) continue
+      out(
+        '   [임계] ' + pad(v.name, 14) + padS(String(t.from), 8) + ' → ' + padS(String(t.to), 8) +
+          '   발동 ' + (t.live0 * 100).toFixed(0) + '% → ' + (t.live1 * 100).toFixed(0) + '%',
+      )
+    }
     // 가장 크게 벗어난 것부터 — 그것이 다른 아이템의 측정 맥락도 가장 크게 흔든다
     off.sort((a, b) => devi(b) - devi(a))
     for (const v of off) {
