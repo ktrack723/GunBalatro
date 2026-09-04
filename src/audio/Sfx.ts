@@ -98,8 +98,9 @@ export function unlockSfx(): void {
   void ensure().then(() => {
     const ctx = mod?.ZZFX.audioContext
     if (ctx !== undefined && ctx.state === 'suspended') void ctx.resume()
-    // 첫 발이 합성음으로 나가지 않게 여기서 미리 디코딩한다
-    if (fireLoading === null) fireLoading = loadFire()
+    // 첫 발·첫 삽탄이 합성음으로 나가지 않게 여기서 미리 디코딩한다
+    preloadSample('fire')
+    preloadSample('roundIn')
   })
 }
 
@@ -137,15 +138,23 @@ export function sfx(id: SfxId, rate = 1, throttleMs = 25): void {
 }
 
 // ---------------------------------------------------------------------------
-// 발사음 — 녹음 샘플 (public/sfx/fire.wav)
+// 녹음 샘플 (public/sfx/*.wav)
 //   합성음(zzfx)은 폴백으로 남겨 둔다. 샘플이 아직 안 읽혔거나 디코딩에 실패하면
 //   소리가 아예 없는 것보다 합성음이 낫다.
-//   원본에는 선행 무음 0.173초가 있어서 그대로 쓰면 총성이 화면보다 늦는다 —
-//   에셋 단계에서 잘라 냈다 (모노 48kHz, 1.04초).
+//   두 파일 모두 선행 무음을 에셋 단계에서 잘라 냈다 — 안 자르면 소리가 화면보다
+//   늦는다 (fire 원본 0.173초, round-in 원본 0.020초). 전부 모노 48kHz.
 // ---------------------------------------------------------------------------
-const FIRE_SRC = 'sfx/fire.wav'
-let fireBuf: AudioBuffer | null = null
-let fireLoading: Promise<void> | null = null
+const SAMPLE_SRC = {
+  /** 발사음 (1.04초) */
+  fire: 'sfx/fire.wav',
+  /** 한 발 삽탄 — 탄창에 탄을 밀어 넣는 금속음 (0.108초) */
+  roundIn: 'sfx/round-in.wav',
+} as const
+
+type SampleId = keyof typeof SAMPLE_SRC
+
+const sampleBuf = new Map<SampleId, AudioBuffer>()
+const sampleLoading = new Map<SampleId, Promise<void>>()
 
 function audioCtx(): AudioContext | null {
   const ctx = mod?.ZZFX.audioContext
@@ -157,25 +166,32 @@ function baseUrl(): string {
   return typeof b === 'string' && b.length > 0 ? b : '/'
 }
 
-async function loadFire(): Promise<void> {
+async function loadSample(id: SampleId): Promise<void> {
   const ctx = audioCtx()
-  if (ctx === null || fireBuf !== null) return
+  if (ctx === null || sampleBuf.has(id)) return
   try {
-    const res = await fetch(baseUrl() + FIRE_SRC)
+    const res = await fetch(baseUrl() + SAMPLE_SRC[id])
     const raw = await res.arrayBuffer()
-    fireBuf = await ctx.decodeAudioData(raw)
+    sampleBuf.set(id, await ctx.decodeAudioData(raw))
   } catch (e) {
-    console.warn('[sfx] 발사음 로드 실패 — 합성음으로 대체한다', e)
+    console.warn('[sfx] 샘플 로드 실패 — 합성음으로 대체한다', id, e)
   }
 }
 
+/** 아직 안 읽었으면 읽기 시작한다 (중복 요청은 막는다) */
+function preloadSample(id: SampleId): void {
+  if (sampleLoading.has(id) || mod === null) return
+  sampleLoading.set(id, loadSample(id))
+}
+
 /** 샘플 한 방. 겹쳐 쏴도 서로 자르지 않게 매번 새 소스를 만든다. */
-function playFire(rate: number, gain: number): boolean {
+function playSample(id: SampleId, rate: number, gain: number): boolean {
   const ctx = audioCtx()
-  if (ctx === null || fireBuf === null) return false
+  const buf = sampleBuf.get(id)
+  if (ctx === null || buf === undefined) return false
   try {
     const src = ctx.createBufferSource()
-    src.buffer = fireBuf
+    src.buffer = buf
     src.playbackRate.value = rate
     const g = ctx.createGain()
     g.gain.value = master * gain
@@ -196,9 +212,20 @@ export function sfxShot(heat: number): void {
   if (!enabled) return
   const tier = heat >= 30 ? 3 : heat >= 16 ? 2 : heat >= 8 ? 1 : 0
   const rate = [1.06, 0.98, 0.91, 0.84][tier]! * (0.98 + Math.random() * 0.04)
-  if (playFire(rate, [0.85, 0.92, 1.0, 1.08][tier]!)) return
+  if (playSample('fire', rate, [0.85, 0.92, 1.0, 1.08][tier]!)) return
   // 폴백 — 샘플이 아직 없다
-  if (fireLoading === null && mod !== null) fireLoading = loadFire()
+  preloadSample('fire')
   const ids: SfxId[] = ['shot0', 'shot1', 'shot2', 'shot3']
   sfx(ids[tier], 0.94 + Math.random() * 0.12, 0)
+}
+
+/**
+ * 삽탄 한 발. 탄창에 탄을 밀어 넣을 때마다 **매번** 운다 — 다섯 발이면 다섯 번.
+ * `rate` 로 발마다 피치를 흔들어, 같은 소리가 연달아 나도 기계 반복으로 안 들리게 한다.
+ */
+export function sfxRoundIn(rate = 1): void {
+  if (!enabled) return
+  if (playSample('roundIn', rate, 1.0)) return
+  preloadSample('roundIn')
+  sfx('roundIn', rate, 0)
 }

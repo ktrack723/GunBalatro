@@ -15,7 +15,7 @@ import type { GameScene } from '../view3d/Scene'
 import type { CombatView } from '../ui/CombatView'
 import { add } from '../ui/dom'
 import { dur, easeIn, easeOut, easeOutBack, tween, wait } from './tween'
-import { sfx, sfxShot } from '../audio/Sfx'
+import { sfx, sfxRoundIn, sfxShot } from '../audio/Sfx'
 
 export interface SeqDeps {
   view: CombatView
@@ -118,7 +118,8 @@ async function playLoadSequence(plan: Round[], d: SeqDeps): Promise<void> {
   for (let k = plan.length - 1; k >= 0; k -= 1) {
     await tween(dur(120, sp), (t) => gun.setRoundInsert(k, t), easeOutBack)
     gun.setRoundInsert(k, 1)
-    sfx('roundIn', 0.90 + ((plan.length - k) % 4) * 0.07, 0)
+    // 한 발 넣을 때마다 녹음된 삽탄음. 발마다 피치를 조금씩 흔든다
+    sfxRoundIn(0.94 + ((plan.length - k) % 4) * 0.045)
     d.haptic('light')
     await wait(80, sp)
   }
