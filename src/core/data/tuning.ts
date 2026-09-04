@@ -21,21 +21,21 @@
  *   price 는 정비소 1발 값 — 가치 분석기가 밴드와 함께 맞춘다.
  */
 export const TR = {
-  sp_incendiary: { dmg: 1, heat: 0.23, price: 16 },
-  sp_ap: { dmg: 7.5, heat: 0.05, price: 16 },
-  sp_shock: { dmg: 14, heat: 0.4, price: 19, knock: 0.121, cap: 0.241 },
+  sp_incendiary: { dmg: 1, heat: 1.1, price: 16 },
+  sp_ap: { dmg: 24, heat: 0.05, price: 16 },
+  sp_shock: { dmg: 14, heat: 0.4, price: 19, knock: 1.5, cap: 3 },
   sp_adhesive: { dmg: 14, heat: 0.4, price: 29, bonus: 23 },
-  sp_thermite: { dmg: 2, heat: 1.69, price: 32 },
+  sp_thermite: { dmg: 2, heat: 2.2, price: 32 },
   sp_marker: { dmg: 16, heat: 0.4, price: 30, vuln: 0.283 },
   sp_chill: { dmg: 69, heat: 0.3, price: 30, slow: 2, cap: 2 },
   sp_cryo: { dmg: 18, heat: 0.15, price: 30, thr: 18, mul: 4.13 },
   sp_purge: { dmg: 126, heat: 0, price: 29, mul: 20 },
   sp_sanctified: { dmg: 26, mult: 6.12, heat: 0.6, price: 55 },
-  sp_cascade: { dmg: 4, mult: 1.65, heat: 1.36, price: 52 },
+  sp_cascade: { dmg: 4, mult: 1.65, heat: 1.5, price: 52 },
   sp_breach: { dmg: 147, heat: 0.05, price: 51 },
   sp_solitary: { dmg: 30, heat: 0.3, price: 51, bonus: 106 },
   sp_firststrike: { dmg: 40, heat: 0.1, price: 51, thr: 6, bonus: 111 },
-  sp_singularity: { dmg: 20, heat: 0, price: 114, mul: 1.78 },
+  sp_singularity: { dmg: 20, heat: 0, price: 114, mul: 1.5 },
   sp_judgment: { dmg: 124, heat: 0.5, price: 111, mul: 3 },
 }
 
@@ -82,7 +82,7 @@ export const TA = {
   op_pact: { dmg: 157, thr: 4.12 },
   op_quartermaster: { mags: 6 },
   op_soulmark: { heat: 5.78, step: 0.603 },
-  op_vigil: { step: 982, max: 5 },
+  op_vigil: { step: 279, max: 5 },
   op_frostvault: { step: 2.28, thr: 6 },
   op_deathrite: { heat: 9.44 },
   op_emperor: { dmg: 65, heat: 1.89 },

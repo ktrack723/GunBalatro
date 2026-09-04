@@ -72,27 +72,32 @@ interface Payload {
  *     소이탄 온도 0.23 (기본탄 0.55 보다 낮다 — '예열탄' 이 아니다)
  *     충격탄 넉백 0.12m (밀어내지 않는다)
  *   밴드는 값을 맞추지 카드가 무엇인지는 모른다. 그건 설계가 정한다.
+ *
+ *   하한은 **기본탄의 2배** 선으로 잡는다 (기본탄 DMG 12 · 온도 0.55). 더 높이 잡으면
+ *   (온도 2.5 를 시도했다) 커먼 예열탄이 값 10.0 으로 커먼 밴드 3.3~4.9 의 두 배가
+ *   된다 — 온도는 뒤따르는 모든 탄을 곱하므로 지렛대가 그만큼 크다. 2배 선은
+ *   '기본탄보다 확실히 낫다' 는 최소 조건이면서 밴드와 싸우지 않는 지점이다.
  */
 const PAYLOAD: Record<string, Payload> = {
   // --- 탄: 기본 dmg/heat 가 곧 세기다. 훅이 있는 탄은 훅 쪽이 페이로드다 ---
   //   하한은 전부 기본탄(DMG 12 · 온도 0.55) 대비로 읽는다.
-  sp_incendiary: { keys: ['heat'], min: 2.5 },
-  sp_ap: { keys: ['dmg'], min: 30 },
-  sp_shock: { keys: ['knock', 'cap'], bounds: { knock: [2, 8], cap: [4, 16] } },
+  sp_incendiary: { keys: ['heat'], min: 1.1 },
+  sp_ap: { keys: ['dmg'], min: 24 },
+  sp_shock: { keys: ['knock', 'cap'], bounds: { knock: [1.5, 8], cap: [3, 16] } },
   sp_adhesive: { keys: ['bonus'] },
-  sp_thermite: { keys: ['heat'], min: 4 },
+  sp_thermite: { keys: ['heat'], min: 2.2 },
   sp_marker: { keys: ['vuln'] },
-  sp_chill: { keys: ['dmg'], min: 30 },
+  sp_chill: { keys: ['dmg'], min: 24 },
   sp_cryo: { keys: ['mul'], min: 3 },
   sp_purge: { keys: ['dmg', 'mul'], bounds: { mul: [4, 40] } },
   // 힘이 '다음 탄 배수' 라는 규칙에 있다. dmg 로 밴드를 맞추면 26 → 203 이 되어
   // 다른 카드가 된다 — 배수 자체를 민다.
   sp_sanctified: { keys: ['mult'], min: 1.2, max: 12 },
-  sp_cascade: { keys: ['mult', 'heat'], bounds: { mult: [1.2, 6], heat: [3, 12] } },
-  sp_breach: { keys: ['dmg'], min: 40 },
+  sp_cascade: { keys: ['mult', 'heat'], bounds: { mult: [1.2, 6], heat: [1.5, 12] } },
+  sp_breach: { keys: ['dmg'], min: 36 },
   sp_solitary: { keys: ['bonus'] },
   sp_firststrike: { keys: ['bonus'] },
-  sp_singularity: { keys: ['mul'], min: 3 },
+  sp_singularity: { keys: ['mul'], min: 1.5 },
   sp_judgment: { keys: ['dmg', 'mul'], bounds: { mul: [1.2, 3] } },
 
   // --- 총열 ---
