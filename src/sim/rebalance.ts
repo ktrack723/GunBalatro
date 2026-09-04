@@ -426,12 +426,11 @@ function main(): void {
   const out = (s: string): void => console.log(s)
 
   // 밴드의 바닥 못을 **잰다** — '탄창에 기본탄 한 발' 이 이 지표에서 몇 %인가.
-  const reanchor = (): number => {
-    const v = measureAttachAnchor(ctxFor('barrel'))
-    bands.setAttachAnchor(v)
-    return v
-  }
-  out('바닥 못 실측: 탄창에 기본탄 +1발 = 처리량 +' + reanchor().toFixed(1) + '%  → 일반 부착물의 중앙')
+  // 못은 아이템과 **같은 앙상블**에서, 그러나 **세션당 한 번만** 잰다.
+  //   맨총에서 재면 단위가 어긋나고(33.9%), 패스마다 재면 발산한다.
+  const anchor = measureAttachAnchor(ctxFor('barrel'))
+  bands.setAttachAnchor(anchor)
+  out('바닥 못 실측: 탄창에 기본탄 +1발 = 처리량 +' + anchor.toFixed(1) + '%  → 일반 부착물의 중앙')
   out('')
   out(bands.report())
   out('')
@@ -443,15 +442,13 @@ function main(): void {
   }
 
   for (let pass = 1; pass <= passes; pass += 1) {
-    // 앙상블의 부착물이 바뀌면 '한 발어치' 도 같이 움직인다 — 패스마다 다시 잰다
-    const a = reanchor()
     const vals = measureAll()
     const off = vals.filter((v) => {
       if (STRUCTURAL.has(v.id)) return false
       const b = targetOf(v)
       return v.value < b.lo || v.value > b.hi
     })
-    out('════ 패스 ' + pass + ' — 밴드 밖 ' + off.length + ' / ' + vals.length + '종 (못 ' + a.toFixed(0) + '%) ════')
+    out('════ 패스 ' + pass + ' — 밴드 밖 ' + off.length + ' / ' + vals.length + '종 (못 ' + anchor.toFixed(0) + '%) ════')
     // 가장 크게 벗어난 것부터 — 그것이 다른 아이템의 측정 맥락도 가장 크게 흔든다
     off.sort((a, b) => devi(b) - devi(a))
     for (const v of off) {
