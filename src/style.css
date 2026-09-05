@@ -180,8 +180,13 @@ html, body {
 }
 
 /* 데미지 팝업 */
+/* 조준선 중앙(≈46%)에 그리면 피격 연출(임팩트 스파크·히트 리액션)을 정면으로 가린다.
+   → 합계 숫자의 아랫변이 조준점보다 위에서 끝나도록 띄운다. 뷰포트가 클수록 더
+      띄우고(20%), 짧은 화면에서는 --dmg-min 으로 받쳐 숫자가 위로 잘리지 않게 한다.
+      §640 의 max-height 미디어쿼리에서 폰트가 줄면 두 값도 함께 줄인다. */
+.viewport-space { --dmg-rise: max(56px, 20%); --dmg-min: 42px; }
 .dmg-pop {
-  position: absolute; left: 50%; top: 46%;
+  position: absolute; left: 50%; top: max(var(--dmg-min), calc(46% - var(--dmg-rise)));
   transform: translate(-50%,-50%);
   display: flex; align-items: baseline; gap: 8px;
   font-family: var(--font-num); pointer-events: none;
@@ -191,7 +196,8 @@ html, body {
 .dmg-x    { font-size: 17px; color: var(--text-faint); }
 .dmg-heat { font-size: 26px; font-weight: 700; color: var(--inc); }
 .dmg-total {
-  position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%);
+  position: absolute; left: 50%; top: max(var(--dmg-min), calc(46% - var(--dmg-rise)));
+  transform: translate(-50%,-50%);
   font-family: var(--font-num); font-size: 42px; font-weight: 800;
   color: #fff; text-shadow: 0 0 26px rgba(255,180,60,.8), 0 3px 12px #000;
   pointer-events: none;
@@ -648,6 +654,7 @@ html, body {
   :root { --h-ammo: 84px; --h-rack: 78px; --h-heat: 46px; --h-mag: 70px; }
   .heat-num { font-size: 28px; }
   .dmg-total { font-size: 52px; }
+  .viewport-space { --dmg-rise: max(46px, 20%); --dmg-min: 34px; }
 }
 
 /* 온도 이월 표시 — v2 에서 온도는 전투 내내 이어지는 자원이다 */
