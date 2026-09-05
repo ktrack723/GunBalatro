@@ -12,6 +12,18 @@ import { SPECIALS, SPECIAL_BY_ID } from '../data/specials'
 import { ARCHETYPES, PASSIVES, baseHp, makeEnemy } from '../data/enemies'
 import { basicRound, fire, makeRound, previewDamage, settleSpecials, startCombat } from '../combat'
 import { computeCap } from '../pipeline'
+import { advanceNode, currentNode, enterDoor, newRun, rollDoors } from '../run'
+import {
+  BOSSES,
+  FINAL_SECTOR,
+  REGIONS,
+  REGION_COUNT,
+  SECTORS_PER_REGION,
+  isBossArchetype,
+  regionBossOf,
+  regionIndexOf,
+  sectorInRegion,
+} from '../data/regions'
 
 function loadout(ids: string[] = [], specials: Record<string, number> = {}): Loadout {
   const l: Loadout = {
@@ -50,6 +62,7 @@ function dummy(hp = 1e9): EnemyInstance {
     label: '표적',
     bodyCount: 1,
     vuln: 0,
+    bossId: null,
   }
 }
 
@@ -484,5 +497,83 @@ describe('심판탄', () => {
     // (상한을 4 로 박아 두면 mul 을 올리는 순간 증식과 구분되지 않는다.)
     const extra = dealt - s.magDamage
     expect(extra).toBeLessThanOrEqual(s.magDamage * TR.sp_judgment.mul * 1.68 * 1.02)
+  })
+})
+
+// ===========================================================================
+// 지역 (Region)
+//   지역은 규칙이지 장식이 아니다 — 섹터가 어느 지역인지, 지역 보스가 어디에
+//   서는지, 완주가 언제인지가 전부 여기서 갈린다. 그래서 잠근다.
+// ===========================================================================
+describe('지역 구조', () => {
+  it('3지역 × 3섹터 = 9섹터', () => {
+    expect(REGION_COUNT).toBe(3)
+    expect(SECTORS_PER_REGION).toBe(3)
+    expect(FINAL_SECTOR).toBe(9)
+    expect(REGIONS.length).toBe(REGION_COUNT)
+  })
+
+  it('섹터가 지역에 정확히 3개씩 나뉜다', () => {
+    const map = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((s) => regionIndexOf(s))
+    expect(map).toEqual([1, 1, 1, 2, 2, 2, 3, 3, 3])
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9].map(sectorInRegion)).toEqual([1, 2, 3, 1, 2, 3, 1, 2, 3])
+  })
+
+  it('지역 보스는 지역의 마지막 섹터에만 선다', () => {
+    for (let s = 1; s <= FINAL_SECTOR; s += 1) {
+      const boss = regionBossOf(s)
+      if (s % 3 === 0) expect(boss?.id).toBe(REGIONS[s / 3 - 1]!.boss.id)
+      else expect(boss).toBeNull()
+    }
+  })
+
+  it('보스마다 이름·대사·아키타입이 다르다 (돌려 쓴 것이 없다)', () => {
+    const ids = new Set(BOSSES.map((b) => b.id))
+    const names = new Set(BOSSES.map((b) => b.name))
+    const intros = new Set(BOSSES.map((b) => b.intro))
+    expect(ids.size).toBe(BOSSES.length)
+    expect(names.size).toBe(BOSSES.length)
+    expect(intros.size).toBe(BOSSES.length)
+    for (const b of BOSSES) {
+      // 맞을 때마다 한 줄씩 순서대로 도는 구조라, 줄이 몇 개인지가 곧 반복 주기다
+      expect(b.hits.length).toBeGreaterThanOrEqual(6)
+      expect(new Set(b.hits).size).toBe(b.hits.length)
+      expect(b.archetype.id).toBe(b.id)
+    }
+  })
+
+  it('지역 보스 아키타입은 일반 적 풀에 섞이지 않는다', () => {
+    for (const a of ARCHETYPES) expect(isBossArchetype(a.id)).toBe(false)
+  })
+})
+
+describe('지역 보스 배치', () => {
+  it('보스 노드의 두 문 뒤에 같은 지역 보스가 있고, 위험도는 언제나 3이다', () => {
+    const run = newRun(42)
+    const seen: string[] = []
+    for (let i = 0; i < 60 && run.status === 'alive'; i += 1) {
+      if (currentNode(run) === 'boss') {
+        const expected = regionBossOf(run.sector)
+        const doors = rollDoors(run)
+        if (expected !== null) {
+          expect(doors).toHaveLength(2)
+          expect(doors[0]!.threat).toBe(3)
+          expect(doors[1]!.threat).toBe(3)
+          expect(doors[0]!.archetype).toBe(expected.archetype.id)
+          expect(doors[1]!.archetype).toBe(expected.archetype.id)
+          // 어느 문으로 들어가도 같은 것을 만난다
+          for (const idx of [0, 1]) {
+            run.doors = doors
+            expect(enterDoor(run, idx).enemy?.bossId).toBe(expected.id)
+          }
+          seen.push(expected.id)
+        } else {
+          expect(enterDoor(run, 0).enemy?.bossId).toBeNull()
+        }
+      }
+      advanceNode(run)
+    }
+    expect(seen).toEqual(BOSSES.map((b) => b.id))
+    expect(run.status).toBe('won')
   })
 })

@@ -5,7 +5,7 @@
 import type { Round, RunState } from '../core/types'
 import { analyzeRounds } from './rounds'
 import { analyzeAttachments } from './attach'
-import { newRun } from '../core/run'
+import { FINAL_SECTOR, newRun } from '../core/run'
 import { startCombat, basicRound, fire, makeRound, previewDamage } from '../core/combat'
 import { makeEnemy } from '../core/data/enemies'
 import { makeRng } from '../core/rng'
@@ -179,7 +179,7 @@ function main(): void {
   out('② 섹터별 생존율')
   out('─'.repeat(70))
   const curves = packs.map((p) => survivalCurve(p.results))
-  for (let s = 0; s < 8; s += 1) {
+  for (let s = 0; s < FINAL_SECTOR; s += 1) {
     let line = 'S' + (s + 1) + '  '
     for (let i = 0; i < packs.length; i += 1) line += padS(pct(curves[i][s]), 8) + ' ' + bar(curves[i][s], 14) + '  '
     out(line)
@@ -292,7 +292,7 @@ function main(): void {
   if (o !== undefined && nv !== undefined) {
     const cn = survivalCurve(nv.results)
     const co = survivalCurve(o.results)
-    for (let i = 0; i < 8; i += 1) gap.push(co[i] - cn[i])
+    for (let i = 0; i < FINAL_SECTOR; i += 1) gap.push(co[i] - cn[i])
   }
   let rising = 0
   for (let i = 2; i < gap.length; i += 1) if (gap[i] >= gap[i - 1]) rising += 1
@@ -309,9 +309,9 @@ function main(): void {
   out(verdict(t3 >= 0.35 && t3 <= 0.65) + ' 2. 갈림길이 선택인가 — 목표 35~65% · 실측 ' + pct(t3))
   out(verdict(never.length === 0) + ' 3. 사장된 부착물 없음 — 채택 0회 ' + never.length + '종')
   out(
-    verdict(rising >= 4) +
-      ' 4. 배울 것이 있는가 — 초보→숙련 생존율 격차 증가 구간 ' + rising + '/6' +
-      (gap.length === 8 ? '  (S8 격차 ' + pct(gap[7]) + ')' : ''),
+    verdict(rising >= FINAL_SECTOR - 4) +
+      ' 4. 배울 것이 있는가 — 초보→숙련 생존율 격차 증가 구간 ' + rising + '/' + (FINAL_SECTOR - 2) +
+      '  (S' + FINAL_SECTOR + ' 격차 ' + pct(gap[FINAL_SECTOR - 1] ?? 0) + ')',
   )
   out(
     verdict(g.summary.winRate >= 0.14 && g.summary.winRate <= 0.26) +

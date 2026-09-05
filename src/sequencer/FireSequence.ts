@@ -11,6 +11,7 @@
 import type { CombatState, FireEvent, Round } from '../core/types'
 import { BASIC_DMG } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
+import { BOSS_BY_ID } from '../core/data/regions'
 import type { GameScene } from '../view3d/Scene'
 import type { CombatView } from '../ui/CombatView'
 import { add } from '../ui/dom'
@@ -315,6 +316,7 @@ export async function playFireSequence(
   d: SeqDeps,
 ): Promise<void> {
   const sp = d.speed()
+  const boss = s.enemy.bossId === null ? null : (BOSS_BY_ID[s.enemy.bossId] ?? null)
   d.view.setBusy(true)
   /** 화면에 지금 떠 있는 온도 — 사격 종료 냉각 연출의 출발점 */
   let shownHeat = s.heatStartBase
@@ -329,6 +331,10 @@ export async function playFireSequence(
         case 'shot':
           await playShot(ev, s, d)
           shownHeat = ev.heatAfter
+          // 보스는 맞을 때마다 지껄인다. 죽는 대사는 enemyDead 가 친다
+          if (boss !== null && ev.enemyHpAfter > 0) {
+            d.view.showBossQuip(boss, ev.enemyHpAfter / Math.max(1, s.enemy.maxHp))
+          }
           break
         case 'notConsumed':
           d.view.showProc('미소모 — ' + label(ev.round))
@@ -385,6 +391,7 @@ export async function playFireSequence(
           break
         case 'enemyDead':
           sfx('kill')
+          if (boss !== null) d.view.showBossQuip(boss, 0)
           if (has3d(d.scene)) {
             const at = d.scene.enemy.targetWorld.clone()
             d.scene.fx.impactFrame(at, 0xffd0a0, 2.0 * d.flashIntensity())

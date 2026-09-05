@@ -160,6 +160,25 @@ html, body {
   to   { transform: none; opacity: 1; }
 }
 
+/* 보스 말풍선 — 화면 아래쪽, 탄창 줄 바로 위.
+   위쪽은 데미지 팝업과 적 HP 가 이미 쓰고 있어 겹치면 둘 다 안 읽힌다. */
+.boss-quip {
+  position: absolute; left: 10px; right: 10px; bottom: 6px;
+  padding: 7px 11px; border-radius: 4px 4px 4px 12px;
+  background: rgba(10,9,12,.86);
+  border: 1px solid var(--quip, #d8c057);
+  border-left-width: 3px;
+  color: var(--quip, #d8c057);
+  font-size: 13px; line-height: 1.35; letter-spacing: -.2px;
+  text-shadow: 0 1px 6px #000;
+  pointer-events: none;
+}
+.boss-quip.say { animation: quipIn .22s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes quipIn {
+  from { transform: translateY(6px) scale(.96); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
 /* 데미지 팝업 */
 .dmg-pop {
   position: absolute; left: 50%; top: 46%;
@@ -743,4 +762,61 @@ html, body {
 .combat-root.intro > *:nth-child(6) { animation-delay: .54s; }
 @media (prefers-reduced-motion: reduce) {
   .combat-root.intro > * { animation: none; }
+}
+
+/* --- 크레딧 롤 --------------------------------------------------------- */
+.screen.credits {
+  background: #040406;
+  display: flex; flex-direction: column;
+}
+.credits-roll {
+  position: absolute; left: 0; right: 0; top: 100%;
+  padding: 0 22px 0;
+  text-align: center;
+  animation-name: creditsRoll;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  will-change: transform;
+}
+@keyframes creditsRoll {
+  from { transform: translateY(0); }
+  to   { transform: translateY(calc(-100% - 100vh)); }
+}
+.credits-gap   { height: 30px; }
+.credits-title {
+  font-size: 30px; font-weight: 800; letter-spacing: 3px;
+  color: var(--brass); margin-bottom: 6px;
+}
+.credits-lead  { font-size: 15px; color: var(--text); margin: 4px 0; }
+.credits-role  {
+  font-size: 11px; letter-spacing: 3px; color: var(--text-faint);
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.credits-name  { font-size: 20px; font-weight: 700; color: #e8e2d6; line-height: 1.5; }
+.credits-small { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+.credits-bar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, #040406 55%, transparent);
+}
+
+/* --- 지역 이름표 ------------------------------------------------------- */
+.region-card {
+  position: absolute; left: 0; right: 0; top: 30%;
+  text-align: center; pointer-events: none;
+  animation: regionCard 3.4s ease-out both;
+}
+.region-card-name {
+  font-size: 26px; font-weight: 800; letter-spacing: 4px;
+  color: #efe7d6; text-shadow: 0 2px 14px #000, 0 0 30px rgba(0,0,0,.9);
+}
+.region-card-sub {
+  margin-top: 8px; font-size: 12px; color: var(--text-dim);
+  text-shadow: 0 2px 8px #000;
+}
+@keyframes regionCard {
+  0%   { opacity: 0; transform: translateY(10px); letter-spacing: 10px; }
+  14%  { opacity: 1; transform: none; }
+  78%  { opacity: 1; }
+  100% { opacity: 0; }
 }

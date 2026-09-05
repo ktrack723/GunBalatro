@@ -72,6 +72,7 @@ function stateFor(ref: Ref, specials: Record<string, number>): CombatState {
       label: '표적',
       bodyCount: 1,
       vuln: 0,
+    bossId: null,
     },
     makeRng(0x51ce),
   )

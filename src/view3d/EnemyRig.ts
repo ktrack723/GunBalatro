@@ -17,6 +17,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { makeViewRng, viewSeedOf, type ViewRng } from './postShader'
+import { makeBoss, type BossVisual } from './BossRig'
 
 const MAX_BODIES = 5
 const MAX_LEGS = 8
@@ -179,6 +180,15 @@ interface Body {
   legPhase: number[]
 }
 
+/** 보스용 더미 개체 — 조준점·거리 계산이 bodies[0] 를 읽으므로 한 칸은 있어야 한다 */
+function soloBody(): Body {
+  return {
+    ox: 0, oz: 0, phase: 0, freqMul: 1, scale: 1, yaw: 0, shake: 0,
+    wideMul: 1, tallMul: 1, legMul: 1, hunch: 0, eyes: 2,
+    legPhase: new Array<number>(MAX_LEGS).fill(0),
+  }
+}
+
 export class EnemyRig {
   /** 씬 루트에 붙는 노드 */
   readonly object = new THREE.Group()
@@ -214,6 +224,12 @@ export class EnemyRig {
   private viewDist = 20
   /** 같은 적을 두 번 만들지 않기 위한 스폰 키 (이동 중 미리 세운 적을 지킨다) */
   private spawnKey = ''
+  /**
+   * 지역 보스의 몸. null 이면 평소의 인스턴싱 다지체다.
+   *   보스는 하나뿐이고 실루엣이 곧 이름이라 인스턴싱과 맞지 않는다 (BossRig 참고).
+   *   거리·피격·죽음 같은 **상태는 이 리그가 그대로 관리하고**, 그리는 몸만 갈아 끼운다.
+   */
+  private boss: BossVisual | null = null
 
   private readonly _m = new THREE.Matrix4()
   private readonly _p = new THREE.Vector3()
@@ -365,13 +381,35 @@ export class EnemyRig {
    * @param variantSeed 스폰마다 다른 값(런 난수 상태 등). 같은 아키타입을 두 번
    *   만나도 체형·색·눈이 다르다. 없으면 스폰 순번을 쓴다.
    */
-  spawn(bodyCount: number, archetypeId: string, variantSeed?: number): void {
+  spawn(bodyCount: number, archetypeId: string, variantSeed?: number, bossId?: string | null): void {
     // 같은 인자로 두 번 부르면 **아무 것도 하지 않는다**.
     //   이동 구간에서 미리 세워 둔 적을 전투 진입에서 다시 spawn 하면 체형·색·눈이
     //   새로 굴려져 눈앞에서 다른 생물로 바뀐다. 그건 컷보다 나쁘다.
-    const key = bodyCount + '|' + archetypeId + '|' + (variantSeed ?? -1)
+    const key = bodyCount + '|' + archetypeId + '|' + (variantSeed ?? -1) + '|' + (bossId ?? '')
     if (key === this.spawnKey && !this.dead) return
     this.spawnKey = key
+
+    // --- 지역 보스 --------------------------------------------------------
+    this.clearBoss()
+    if (typeof bossId === 'string' && bossId.length > 0) {
+      const b = makeBoss(bossId)
+      if (b !== null) {
+        this.boss = b
+        b.object.visible = true
+        this.object.add(b.object)
+        for (const m of [this.bodyMesh, this.legMesh, this.eyeMesh]) m.visible = false
+        this.count = 1
+        this.params = archParams('colossus')
+        this.dead = false
+        this.dieT = -1
+        this.hitT = -1
+        // 조준점 계산이 bodies 를 읽으므로 한 마리 분량은 채워 둔다
+        this.bodies.length = 0
+        this.bodies.push(soloBody())
+        return
+      }
+    }
+    for (const m of [this.bodyMesh, this.legMesh, this.eyeMesh]) m.visible = true
     this.count = THREE.MathUtils.clamp(Math.floor(bodyCount) || 1, 1, MAX_BODIES)
     this.params = archParams(archetypeId)
     this.spawnSerial += 1
@@ -444,6 +482,18 @@ export class EnemyRig {
     this.writeMatrices()
   }
 
+  private clearBoss(): void {
+    if (this.boss === null) return
+    this.object.remove(this.boss.object)
+    this.boss.dispose()
+    this.boss = null
+  }
+
+  /** 보스가 서 있는가 — 연출이 조준점·죽음 연출을 다르게 잡을 때 읽는다 */
+  get isBoss(): boolean {
+    return this.boss !== null
+  }
+
   /** 거리(m) → 3D 위치. animate=true 면 600ms ease-in 보간 (§2.3 t=300) */
   setDistance(meters: number, startDist: number, animate: boolean): void {
     const z = distanceToZ(meters)
@@ -501,6 +551,11 @@ export class EnemyRig {
 
   /** 갑각 월드 좌표 (트레이서 끝점). 무리면 가장 앞선 개체를 겨눈다 */
   get targetWorld(): THREE.Vector3 {
+    if (this.boss !== null) {
+      this._tw.set(0, this.boss.aimY, this.z + 0.35)
+      this.object.updateWorldMatrix(true, false)
+      return this._tw.applyMatrix4(this.object.matrixWorld)
+    }
     let b = this.bodies[0]
     for (const o of this.bodies) if (b && o.oz > b.oz) b = o
     const s = b ? b.scale : 1
@@ -565,6 +620,15 @@ export class EnemyRig {
 
     for (const b of this.bodies) {
       if (b.shake > 0) b.shake = Math.max(0, b.shake - d / 0.22)
+    }
+
+    // 보스는 인스턴싱 행렬을 쓰지 않는다 — 자기 몸을 스스로 움직인다
+    if (this.boss !== null) {
+      this.boss.object.position.set(0, 0, this.z)
+      this.boss.update(this.t, this.bodies[0]?.shake ?? 0, dieP)
+      this.boss.setFlash(flash * 1.1)
+      if (dieP >= 1) this.boss.object.visible = false
+      return
     }
 
     this.writeMatrices(dieP)
@@ -690,6 +754,7 @@ export class EnemyRig {
   }
 
   dispose(): void {
+    this.clearBoss()
     for (const g of this.bodyVariants) g.dispose()
     for (const g of this.legVariants) g.dispose()
     this.eyeMesh.geometry.dispose()

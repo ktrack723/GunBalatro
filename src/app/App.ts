@@ -54,6 +54,7 @@ import { showRewards } from '../ui/screens/RewardScreen'
 import { showArmory } from '../ui/screens/ArmoryScreen'
 import { showDerelict } from '../ui/screens/DerelictScreen'
 import { deathCause, showResult } from '../ui/screens/ResultScreen'
+import { showCredits } from '../ui/screens/CreditsScreen'
 import { showSettings } from '../ui/screens/SettingsScreen'
 import { showLoadout } from '../ui/screens/LoadoutSheet'
 
@@ -64,6 +65,8 @@ import { killTweens, setFxSeed } from '../sequencer/tween'
 import type { GameRenderer } from '../view3d/Renderer'
 import type { GameScene } from '../view3d/Scene'
 import type { CorridorKind } from '../view3d/CorridorStreamer'
+import { BIOMES } from '../view3d/Biome'
+import { BOSS_BY_ID, regionOf, sectorInRegion } from '../core/data/regions'
 import { makeViewRng, viewSeedOf, type ViewRng } from '../view3d/postShader'
 
 // ---------------------------------------------------------------------------
@@ -82,7 +85,11 @@ const TRAVEL_MAX = 3
 const DOOR_TRAVEL = 1.6
 /** 포스트 셰이더 비네트 기본값 (PostPass 생성자와 같은 값 — '어둠이 예산이다') */
 const BASE_VIGNETTE = 0.42
-/** 전투 노드에서 고를 복도 종류 (core 에 NodeKind→CorridorKind 매핑이 없어 view 가 정한다) */
+/**
+ * 전투 노드에서 고를 복도 종류.
+ *   core 에 NodeKind→CorridorKind 매핑이 없어 view 가 정한다. 지역이 자기 목록을
+ *   갖고 있으면 그쪽이 이긴다 — 백룸에 배관실이 나오면 그건 백룸이 아니다.
+ */
 const COMBAT_KINDS: readonly CorridorKind[] = ['corridor', 'stair', 'pipe', 'office', 'garage']
 
 /** '꾹 눌러 설명' 안내를 이미 띄웠는가 (세션 스코프) */
@@ -311,7 +318,7 @@ export class App {
 
       advanceNode(run)
       if (statusOf(run) === 'won') {
-        await this.finish(run, true, '적과 접촉하지 않고 섹터를 전부 넘어섰다.')
+        await this.finish(run, true, '세 지역을 전부 넘어섰다.')
         return this.restartWanted
       }
       saveRun(run)
@@ -373,13 +380,14 @@ export class App {
     )
   }
 
-  private kindFor(rng: ViewRng, node: NodeKind, leg: number): CorridorKind {
+  private kindFor(run: RunState, rng: ViewRng, node: NodeKind, leg: number): CorridorKind {
     if (node === 'boss') return 'chapel'
     if (node === 'reliquary') return 'chapel'
     if (node === 'armory') return 'garage'
     if (node === 'derelict') return 'office'
-    if (leg === 1) return 'corridor'
-    return rng.pick(COMBAT_KINDS)
+    const pool = BIOMES[regionOf(run.sector).id]?.kinds ?? COMBAT_KINDS
+    if (leg === 1) return pool[0] ?? 'corridor'
+    return rng.pick(pool)
   }
 
   /**
@@ -400,6 +408,9 @@ export class App {
     ahead: EnemyInstance | null = null,
   ): Promise<void> {
     const sc = this.scene
+    // 지역이 바뀌는 순간은 **구간 경계**뿐이다. 복도가 여기서 새로 조립되므로
+    // 색이 갈리는 프레임이 플레이어에게는 문 안쪽으로 들어가는 프레임과 같다.
+    sc?.setBiome(regionOf(run.sector).id)
     const rng = this.viewRng(run, leg)
     const base = fixedSeconds ?? rng.range(TRAVEL_MIN, TRAVEL_MAX)
     const sp = speedFactor()
@@ -415,12 +426,13 @@ export class App {
         ahead.archetype.id,
         this.enemyViewSeed(run),
         previewStartDistance(run, ahead),
+        ahead.bossId,
       )
     }
 
     if (sc === null || secs <= 0.05) {
       if (sc !== null) {
-        sc.continueTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), 0.35, hint)
+        sc.continueTravel(rng.int(0x7fffffff), this.kindFor(run, rng, node, leg), 0.35, hint)
         stage()
         sc.rail.skip()
       }
@@ -429,12 +441,31 @@ export class App {
 
     sc.setViewportInsets(0, 0) // 이동 중에는 화면 전체가 복도다
     // leg 1 = 문을 지나 다음 복도로. 카메라를 원점으로 되돌리지 않고 이어 붙인다.
-    if (leg === 1) sc.continueTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
-    else sc.startTravel(rng.int(0x7fffffff), this.kindFor(rng, node, leg), secs, hint)
+    if (leg === 1) sc.continueTravel(rng.int(0x7fffffff), this.kindFor(run, rng, node, leg), secs, hint)
+    else sc.startTravel(rng.int(0x7fffffff), this.kindFor(run, rng, node, leg), secs, hint)
     stage()
-    this.mountTravelOverlay(leg === 1 ? '문 안쪽으로' : '이동 중')
+    const reg = regionOf(run.sector)
+    this.mountTravelOverlay(
+      leg === 1 ? '문 안쪽으로' : '지역 ' + reg.index + ' · ' + reg.name,
+    )
+    // 지역에 처음 들어서는 순간에만 이름표를 띄운다 — 여기가 어디인지 한 번은
+    // 글자로 말해 줘야 색이 바뀐 이유가 '지역' 으로 읽힌다
+    if (sectorInRegion(run.sector) === 1 && run.nodeIndex === 0 && leg === 0) {
+      this.showRegionCard(reg.name, reg.tagline)
+    }
     await this.waitFrames(() => sc.rail.finished, secs * 4 + 8)
     this.unmountTravelOverlay()
+  }
+
+  /**
+   * 지역 이름표. 이동 구간 위에 3초 떠 있다 — 누를 것이 없으므로 이벤트를 먹지 않는다.
+   */
+  private showRegionCard(name: string, tagline: string): void {
+    const card = el('div', 'region-card')
+    add(card, 'div', 'region-card-name', name)
+    add(card, 'div', 'region-card-sub', tagline)
+    this.ui.appendChild(card)
+    window.setTimeout(() => card.remove(), 3400)
   }
 
   /** 홀드=2배속 / 더블탭=스킵 / [건너뛰기] 버튼 (TECH §4.1) */
@@ -580,7 +611,7 @@ export class App {
       sc.fx.setVignette(BASE_VIGNETTE)
       sc.fx.setTint(1, 1, 1)
       // 이동 중에 미리 세워 뒀다면 같은 인자라 무시된다 (생물이 바뀌지 않는다)
-      sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, this.enemyViewSeed(run))
+      sc.enemy.spawn(enemy.bodyCount, enemy.archetype.id, this.enemyViewSeed(run), enemy.bossId)
       sc.enemy.setDistance(s.distance, enemy.startDist, false)
       sc.gun.resetHeat(s.heat)
       // 탄창 용량이 곧 규칙이므로 총 모델도 따라간다 (2연발은 짧게, 드럼은 크게)
@@ -591,6 +622,11 @@ export class App {
       sfx('skid', 1, 0)
       haptic(24)
     }
+
+    // 지역 보스는 들어오자마자 말을 건다. 이름을 먼저 알려주는 것보다
+    // 목소리를 먼저 들려주는 편이 훨씬 빨리 '누구' 로 읽힌다.
+    const boss = enemy.bossId === null ? null : (BOSS_BY_ID[enemy.bossId] ?? null)
+    if (boss !== null) view.showBossIntro(boss)
 
     // 꾹 눌러 설명 보기는 눌러 보기 전에는 알 수 없다 — 세션당 한 번만 알려준다
     if (!hintedLongPress) {
@@ -712,6 +748,8 @@ export class App {
   /** 런 종료. showResult 가 recordResult + clearRun 을 이미 수행한다 (중복 호출 금지) */
   private async finish(run: RunState, won: boolean, cause: string): Promise<void> {
     this.idleScene()
+    // 완주는 이 게임에서 가장 드문 사건이다 — 통계표보다 크레딧이 먼저 온다.
+    if (won) await showCredits(this.ui)
     const r = await showResult(this.ui, run, won, cause)
     this.restartWanted = r === 'restart'
   }
@@ -721,6 +759,21 @@ export class App {
   // =========================================================================
 
   /** 화면 전환용 정지 상태 — 잔여 연출을 지우고 전투 구도로 되돌린다 */
+  /** 개발 핸들 (#dev 에서만 읽힌다). 실기 확인용 — 게임 코드는 쓰지 않는다 */
+  get devScene(): GameScene | null {
+    return this.scene
+  }
+
+  /** 같은 목적 — 지금 떠 있는 전투 화면 */
+  get devView(): CombatView | null {
+    return this.view
+  }
+
+  /** 같은 목적 — 지금 굴러가는 전투 상태 */
+  get devCombat(): CombatState | null {
+    return this.combat
+  }
+
   private idleScene(): void {
     const sc = this.scene
     if (sc === null) return

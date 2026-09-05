@@ -8,6 +8,8 @@ import { GameRenderer } from './view3d/Renderer'
 import { App, type AudioHook } from './app/App'
 import { initSettings, loadSettings } from './ui/settings'
 import { mountToasts, toast } from './ui/toast'
+import { showCredits } from './ui/screens/CreditsScreen'
+import { BOSSES } from './core/data/regions'
 
 // ---------------------------------------------------------------------------
 // DOM 확보
@@ -210,7 +212,7 @@ window.addEventListener('pagehide', () => {
 
 // --- 개발용 핸들 (#dev 일 때만) ---------------------------------------------
 if (location.hash.includes('dev')) {
-  ;(window as unknown as Record<string, unknown>)['__gb'] = { renderer, game, audio }
+  ;(window as unknown as Record<string, unknown>)['__gb'] = { renderer, game, audio, scene: game.devScene, credits: showCredits, bosses: BOSSES }
 }
 
 // --- 시작 -------------------------------------------------------------------

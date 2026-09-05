@@ -11,6 +11,7 @@ import { fire, settleSpecials, startCombat } from '../core/combat'
 import { computeFireCost } from '../core/pipeline'
 import { combatBrass } from '../core/economy'
 import {
+  FINAL_SECTOR,
   advanceNode,
   armoryStock,
   buy,
@@ -199,7 +200,7 @@ function probeEnemy(run: RunState, threat: Threat = 1, caseIndex = 0) {
   return makeEnemy({
     archetypeId: c.archetypeId,
     passiveId: c.passiveId,
-    sector: Math.max(1, Math.min(8, run.sector)),
+    sector: Math.max(1, Math.min(FINAL_SECTOR, run.sector)),
     nodeMul: 1.63,
     threat,
   })
@@ -543,7 +544,7 @@ export function simulateRun(
     seed,
     skill,
     stake,
-    reachedSector: Math.min(8, run.sector),
+    reachedSector: Math.min(FINAL_SECTOR, run.sector),
     won: run.status === 'won',
     deathNode,
     finalBuild: buildOf(run),
@@ -571,10 +572,10 @@ function median(a: number[]): number {
 }
 
 export function summarize(results: readonly RunResult[]): Summary {
-  const hist = new Array<number>(9).fill(0)
+  const hist = new Array<number>(FINAL_SECTOR + 1).fill(0)
   let wins = 0
   for (const r of results) {
-    hist[Math.max(1, Math.min(8, r.reachedSector))] += 1
+    hist[Math.max(1, Math.min(FINAL_SECTOR, r.reachedSector))] += 1
     if (r.won) wins += 1
   }
   return {
@@ -588,7 +589,7 @@ export function summarize(results: readonly RunResult[]): Summary {
 
 export function survivalCurve(results: readonly RunResult[]): number[] {
   const out: number[] = []
-  for (let s = 1; s <= 8; s += 1) {
+  for (let s = 1; s <= FINAL_SECTOR; s += 1) {
     const alive = results.filter((r) => r.reachedSector >= s || r.won).length
     out.push(results.length === 0 ? 0 : alive / results.length)
   }

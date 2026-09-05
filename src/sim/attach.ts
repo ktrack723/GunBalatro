@@ -108,6 +108,7 @@ function stateFor(ref: Ref, a: Attachment | null, emptySlot?: string): CombatSta
       label: '표적',
       bodyCount: 1,
       vuln: 0,
+    bossId: null,
     },
     makeRng(0x4a11),
   )

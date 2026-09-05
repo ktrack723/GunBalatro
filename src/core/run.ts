@@ -31,11 +31,13 @@ import { makeRng } from './rng'
 import { ATTACHMENTS, ATT_BY_ID, STARTER_MAGAZINE, pickAttachment } from './data/attachments'
 import { SPECIALS, SPECIAL_BY_ID, startingSpecials } from './data/specials'
 import { ARCH_BY_ID, PASSIVES, makeEnemy } from './data/enemies'
+import { FINAL_SECTOR as REGION_FINAL_SECTOR, regionBossOf, sectorInRegion } from './data/regions'
 import { computeStartDistance } from './pipeline'
 import { PRICES, shopPrice } from './economy'
 import { equip, growRails } from './data/events'
 
-export const FINAL_SECTOR = 8
+/** 마지막 섹터 — 지역 구조(3지역 × 3섹터)가 정한다 */
+export const FINAL_SECTOR = REGION_FINAL_SECTOR
 /** layout = [combat, combat, <special>, boss, armory] */
 export const LAST_NODE = 4
 
@@ -112,13 +114,15 @@ function rollBossPassive(run: RunState): string {
 // ---------------------------------------------------------------------------
 // 노드
 // ---------------------------------------------------------------------------
+/**
+ * 섹터 배치. 가운데 한 칸이 섹터마다 다르고, 그 리듬을 **지역이** 정한다.
+ *   지역의 1섹터 정비소 → 2섹터 폐허 → 3섹터 성소 → 지역 보스.
+ * 예전에는 3·5·7 처럼 홀짝으로 갈랐는데, 지역이 생긴 뒤로는 그 규칙이
+ * 지역 경계와 어긋나 "왜 여기서 성소가 나오지" 가 됐다.
+ */
 export function sectorLayout(sector: number): NodeKind[] {
-  const special: NodeKind =
-    sector === 3 || sector === 5 || sector === 7
-      ? 'reliquary'
-      : sector % 2 === 0
-        ? 'derelict'
-        : 'armory'
+  const k = sectorInRegion(sector)
+  const special: NodeKind = k === 3 ? 'reliquary' : k === 2 ? 'derelict' : 'armory'
   return ['combat', 'combat', special, 'boss', 'armory']
 }
 
@@ -187,6 +191,23 @@ function rollRarity(r: Rng, threat: Threat): Rarity {
 export function rollDoors(run: RunState): DoorOption[] {
   if (run.doors !== null) return run.doors
   const isBoss = currentNode(run) === 'boss'
+
+  // 지역 보스 — 갈림길이 아니다. 양쪽 문 뒤에 같은 것이 서 있다.
+  //   호출부(봇 포함)가 두 칸을 기대하므로 개수는 지키고 내용만 하나로 만든다.
+  const regionBoss = isBoss ? regionBossOf(run.sector) : null
+  if (regionBoss !== null) {
+    const door: DoorOption = {
+      threat: 3,
+      kind: 'boss',
+      archetype: regionBoss.archetype.id as EnemyArchetypeId,
+      passiveId: run.bossPassiveId,
+      rewardHint: 'rare',
+      label: regionBoss.name,
+    }
+    run.doors = [door, { ...door }]
+    return run.doors
+  }
+
   const doors = withRng(run, (r) => {
     const pair = r.pick(THREAT_PAIRS)
     const pool = archPool(run)
@@ -225,6 +246,7 @@ export function enterDoor(
   const node = currentNode(run)
   const nodeMul = node === 'boss' ? NODE_MUL.boss : run.nodeIndex === 1 ? NODE_MUL.big : NODE_MUL.small
   const stakeHpMul = run.stake >= 3 ? 1.1 : 1
+  const boss = node === 'boss' ? regionBossOf(run.sector) : null
   const enemy =
     d.archetype === null
       ? null
@@ -235,6 +257,7 @@ export function enterDoor(
           nodeMul,
           threat: d.threat,
           stakeHpMul,
+          bossId: boss?.id ?? null,
         })
   return { node, enemy, threat: d.threat }
 }

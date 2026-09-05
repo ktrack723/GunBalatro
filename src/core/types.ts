@@ -206,6 +206,10 @@ export type EnemyArchetypeId =
   | 'crawler'
   | 'stalker'
   | 'colossus'
+  // 지역 보스 — 일반 풀에는 들어가지 않는다 (data/regions.ts 가 세운다)
+  | 'boss_blinky'
+  | 'boss_custodian'
+  | 'boss_mother'
 
 export interface EnemyArchetype {
   id: EnemyArchetypeId
@@ -241,6 +245,12 @@ export interface EnemyInstance {
   bodyCount: number
   /** 디버프: 이 전투 동안 받는 피해 증가분 (0.2 = +20%) */
   vuln: number
+  /**
+   * 지역 보스면 그 id. 일반 적은 null.
+   *   연출(전용 리그)과 대사가 이 값 하나로 갈린다 — 규칙은 아키타입이 이미 다 갖고
+   *   있으므로 여기에는 **누구인가**만 담는다.
+   */
+  bossId: string | null
 }
 
 // ---------------------------------------------------------------------------

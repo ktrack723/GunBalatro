@@ -9,6 +9,7 @@
 import type { Attachment, CombatState, Round, SlotKind } from '../core/types'
 import { BASIC_DMG, BASIC_HEAT, RAIL_ACCEPTS, RARITY_LABEL, SLOT_LABEL } from '../core/types'
 import { SPECIAL_BY_ID } from '../core/data/specials'
+import type { BossDef } from '../core/data/regions'
 import { basicRound, makeRound, swapAttachment } from '../core/combat'
 import { computeHeatCarry } from '../core/pipeline'
 import { add, Bin, clamp, clear, el, fmtInt, longPress, on, orderMark, setClass } from './dom'
@@ -103,6 +104,11 @@ export class CombatView {
   private busy = false
   private lastHeat = 1
   /** 탄 카드의 잔량 표시 노드 — 탭마다 전체를 다시 그리지 않고 숫자만 고친다 */
+  private quipBox!: HTMLElement
+  /** 다음에 칠 대사 번호 — 순서대로 돌아야 뒤로 갈수록 말이 무너지는 구성이 산다 */
+  private quipN = 0
+  private saidHalf = false
+  private quipTimer = 0
   private countNodes = new Map<string, HTMLElement>()
   private fxNodes: HTMLElement[] = []
 
@@ -131,6 +137,11 @@ export class CombatView {
     // --- 3D 가 비치는 영역 ---
     this.viewport = add(root, 'div', 'viewport-space')
     this.procRail = add(this.viewport, 'div', 'proc-rail')
+    // 보스 말풍선 — 한 개만 두고 글자를 갈아 끼운다.
+    //   맞을 때마다 새 풍선을 쌓으면 화면이 말풍선으로 덮인다. 하나가 계속
+    //   바뀌어야 "쉬지 않고 지껄인다" 로 읽힌다.
+    this.quipBox = add(this.viewport, 'div', 'boss-quip')
+    this.quipBox.style.display = 'none'
 
     // --- 거리 ---
     const dist = add(root, 'div', 'dist-row')
@@ -471,6 +482,48 @@ export class CombatView {
     window.setTimeout(() => box.classList.remove('proc'), 320)
   }
 
+  /**
+   * 보스 대사.
+   *   hpFrac 0 이면 죽는 대사, 처음으로 절반 아래로 내려가면 중간 대사,
+   *   그 밖에는 hits 를 순서대로 하나씩.
+   */
+  showBossQuip(boss: BossDef, hpFrac: number): void {
+    let line: string
+    if (hpFrac <= 0) {
+      line = boss.death
+    } else if (!this.saidHalf && hpFrac <= 0.5) {
+      this.saidHalf = true
+      line = boss.half
+    } else {
+      line = boss.hits[this.quipN % boss.hits.length] ?? boss.hits[0] ?? ''
+      this.quipN += 1
+    }
+    this.sayQuip(line, boss.color)
+  }
+
+  /** 전투 시작 인사 — 카운터를 처음으로 되돌린다 */
+  showBossIntro(boss: BossDef): void {
+    this.quipN = 0
+    this.saidHalf = false
+    this.sayQuip(boss.intro, boss.color)
+  }
+
+  private sayQuip(text: string, color: string): void {
+    const box = this.quipBox
+    box.style.display = ''
+    box.style.setProperty('--quip', color)
+    box.textContent = text
+    // 애니메이션을 다시 태우려면 클래스를 뗐다 붙이면서 리플로우를 한 번 강제한다
+    box.classList.remove('say')
+    void box.offsetWidth
+    box.classList.add('say')
+    window.clearTimeout(this.quipTimer)
+    this.quipTimer = window.setTimeout(() => {
+      box.classList.remove('say')
+      box.style.display = 'none'
+    }, 2600)
+  }
+
   showProc(name: string): void {
     const chip = add(this.procRail, 'div', 'proc-chip', name)
     this.fxNodes.push(chip)
@@ -493,6 +546,7 @@ export class CombatView {
   }
 
   destroy(): void {
+    window.clearTimeout(this.quipTimer)
     this.bin.clear()
     this.clearFx()
     clear(this.host)

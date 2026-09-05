@@ -19,6 +19,7 @@ import {
   threatHpMul,
   threatSpeedAdd,
 } from '../types'
+import { BOSS_ARCHETYPES, FINAL_SECTOR } from './regions'
 
 // ---------------------------------------------------------------------------
 // 아키타입 (BALANCE.md §3 "아키타입 · 위험도 보정" 표와 1:1)
@@ -99,6 +100,10 @@ const COLOSSUS: EnemyArchetype = {
 
 export const ARCHETYPES: EnemyArchetype[] = [SHAMBLER, RUNNER, BLOAT, HORDE, CRAWLER, STALKER, COLOSSUS]
 
+/**
+ * 지역 보스는 ARCHETYPES(일반 풀)에 넣지 않는다 — 갈림길이 보스를 뽑아 버린다.
+ * 대신 조회표에만 얹어, id 로 찾을 때는 똑같이 나오게 한다.
+ */
 export const ARCH_BY_ID: Record<EnemyArchetypeId, EnemyArchetype> = {
   shambler: SHAMBLER,
   runner: RUNNER,
@@ -107,6 +112,9 @@ export const ARCH_BY_ID: Record<EnemyArchetypeId, EnemyArchetype> = {
   crawler: CRAWLER,
   stalker: STALKER,
   colossus: COLOSSUS,
+  boss_blinky: BOSS_ARCHETYPES['boss_blinky'] as EnemyArchetype,
+  boss_custodian: BOSS_ARCHETYPES['boss_custodian'] as EnemyArchetype,
+  boss_mother: BOSS_ARCHETYPES['boss_mother'] as EnemyArchetype,
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +338,8 @@ export const PASSIVE_BY_ID: Record<string, EnemyPassive> = (() => {
 //   난이도 상향(R10) 380 → 페이싱(R12) 320 × 1.91^(s-1), big 1.8 / boss 2.2, 위험도 1.05/1.35/3.5.
 // ---------------------------------------------------------------------------
 
-const LAST_SECTOR = 8
+/** 정규 구간의 마지막 섹터. 지역 구조가 정하므로 regions.ts 를 그대로 따른다 */
+const LAST_SECTOR = FINAL_SECTOR
 
 export function baseHp(sector: number, nodeMul: number, endless: boolean): number {
   // 방어: 섹터는 1 이상의 정수로만 다룬다 (호출부 실수로 NaN 이 새지 않게).
@@ -363,6 +372,8 @@ export function makeEnemy(opts: {
   nodeMul: number
   threat: Threat
   stakeHpMul?: number
+  /** 지역 보스면 그 id. 라벨과 연출만 갈린다 — 수치는 아키타입이 이미 갖고 있다 */
+  bossId?: string | null
 }): EnemyInstance {
   const arch = ARCH_BY_ID[opts.archetypeId]
   const passive = opts.passiveId ? PASSIVE_BY_ID[opts.passiveId] ?? null : null
@@ -385,5 +396,6 @@ export function makeEnemy(opts: {
     // 무리만 연출상 다수. 규칙상으로는 언제나 단일 개체다 (GDD §8.2).
     bodyCount: arch.id === 'horde' ? 5 : 1,
     vuln: 0,
+    bossId: opts.bossId ?? null,
   }
 }

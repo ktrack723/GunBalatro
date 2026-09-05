@@ -182,6 +182,7 @@ function stateFor(l: Loadout, seed: number, passive: boolean, hp = HP_LEVELS[1]!
       label: '표적',
       bodyCount: 1,
       vuln: 0,
+    bossId: null,
     },
     makeRng(seed),
   )

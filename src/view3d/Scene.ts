@@ -10,6 +10,8 @@ import { GunRig } from './GunRig'
 import { EnemyRig } from './EnemyRig'
 import { CORRIDOR_LENGTH, CorridorStreamer, type CorridorKind } from './CorridorStreamer'
 import { RailCamera } from './RailCamera'
+import { BIOMES, DEFAULT_BIOME, type Biome } from './Biome'
+import type { RegionId } from '../core/data/regions'
 
 export type ViewMode = 'combat' | 'travel'
 
@@ -33,6 +35,8 @@ export class GameScene {
   readonly flashlight: THREE.SpotLight
   readonly ambient: THREE.AmbientLight
   private readonly viewLight: THREE.DirectionalLight
+  private readonly renderer: THREE.WebGLRenderer
+  private biome: Biome = DEFAULT_BIOME
 
   private mode: ViewMode = 'combat'
   private t = 0
@@ -58,6 +62,7 @@ export class GameScene {
   private readonly _lt = new THREE.Vector3()
 
   constructor(renderer: THREE.WebGLRenderer) {
+    this.renderer = renderer
     this.root.background = null
     this.root.fog = new THREE.FogExp2(FOG_COLOR, 0.046)
 
@@ -133,19 +138,47 @@ export class GameScene {
    */
   private applyFlashlightMode(mode: ViewMode): void {
     const f = this.flashlight
+    // 세기는 지역이 정한다 — 형광등이 켜진 곳에서 손전등은 있으나 마나 하다
+    f.color.setHex(this.biome.torch.color)
     if (mode === 'combat') {
-      f.intensity = 62
+      f.intensity = this.biome.torch.combat
       f.distance = 60
       f.decay = 1.12
       f.angle = THREE.MathUtils.degToRad(35)
       f.penumbra = 0.86
     } else {
-      f.intensity = 34
+      f.intensity = this.biome.torch.travel
       f.distance = 30
       f.decay = 1.55
       f.angle = THREE.MathUtils.degToRad(38)
       f.penumbra = 0.72
     }
+  }
+
+  /**
+   * 지역을 바꾼다 — 안개·앰비언트·손전등·복도 팔레트가 한 번에 따라간다.
+   *   복도는 **다시 조립**되어야 하므로 이 호출만으로는 색이 바뀌지 않는다.
+   *   다음 continueTravel 이 새 팔레트로 조립한다 (구간 경계에서만 바뀐다 —
+   *   걷는 도중에 벽 색이 갈리면 그건 컷이다).
+   */
+  setBiome(id: RegionId): void {
+    const b = BIOMES[id] ?? DEFAULT_BIOME
+    if (b === this.biome) return
+    this.biome = b
+    const fog = this.root.fog
+    if (fog instanceof THREE.FogExp2) {
+      fog.color.setHex(b.fog.color)
+      fog.density = b.fog.density
+    }
+    // 복도 끝의 '구멍' 이 안개와 이어지려면 클리어 색도 같이 가야 한다
+    this.renderer.setClearColor(b.fog.color, 1)
+    this.ambient.color.setHex(b.ambient.color)
+    this.ambient.intensity = b.ambient.intensity
+    this.applyFlashlightMode(this.mode)
+  }
+
+  get biomeId(): RegionId {
+    return this.biome.id
   }
 
   setMode(mode: ViewMode): void {
@@ -216,8 +249,9 @@ export class GameScene {
     archetypeId: string,
     variantSeed: number,
     startDist: number,
+    bossId: string | null = null,
   ): void {
-    this.enemy.spawn(bodyCount, archetypeId, variantSeed)
+    this.enemy.spawn(bodyCount, archetypeId, variantSeed, bossId)
     this.rail.endPoint(this._end)
     this.enemy.object.position.set(this._end.x, 0, this._end.z)
     this.enemy.setDistance(startDist, startDist, false)
@@ -259,7 +293,7 @@ export class GameScene {
     const z0 = this.camera.position.z
     this.staged = false
     this.corridor.setHint(hint)
-    this.corridor.rebuild(seed, kind)
+    this.corridor.rebuild(seed, kind, this.biome)
     this.corridor.setOriginZ(z0)
     this.rail.resetFrom(seed, x0, z0)
     this.rail.start(seconds)

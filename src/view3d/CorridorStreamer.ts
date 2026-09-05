@@ -7,6 +7,15 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { makeViewRng, type ViewRng } from './postShader'
+import { DEFAULT_BIOME, remapProp, type Biome } from './Biome'
+
+/**
+ * 지금 조립 중인 지역 팔레트.
+ *   지오메트리 헬퍼(paint)가 모듈 함수라 인자로 끌고 다니면 서른 곳이 바뀐다.
+ *   rebuild 가 조립 **직전에** 세우고 조립이 끝나면 그대로 둔다 — 조립은 동기이고
+ *   한 번에 하나뿐이라 이 값이 중간에 바뀔 창이 없다.
+ */
+let activeBiome: Biome = DEFAULT_BIOME
 
 export type CorridorKind = 'corridor' | 'stair' | 'office' | 'pipe' | 'garage' | 'chapel'
 
@@ -23,7 +32,7 @@ const CH = 3.0 // 천장 높이
 const THREAT_COLOR: Record<number, number> = { 1: 0xcfe0f0, 2: 0xffa53c, 3: 0xff4a52 }
 
 // --- 지오메트리 헬퍼 ---------------------------------------------------------
-function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+function fill(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   const n = g.attributes.position!.count
   const arr = new Float32Array(n * 3)
   const c = new THREE.Color(hex)
@@ -34,6 +43,28 @@ function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   }
   g.setAttribute('color', new THREE.BufferAttribute(arr, 3))
   return g
+}
+
+/** 소품 — 지역 팔레트로 재사상해서 칠한다 */
+function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+  return fill(g, remapProp(hex, activeBiome))
+}
+
+/** 껍데기(벽·바닥·천장) — 이미 지역이 정한 색이므로 그대로 칠한다 */
+function shell(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+  return fill(g, hex)
+}
+
+/** 껍데기용 상자 */
+function bxs(
+  w: number, h: number, d: number,
+  x: number, y: number, z: number,
+  hex: number, uvs = 1,
+): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(w, h, d)
+  uvScale(g, uvs)
+  g.translate(x, y, z)
+  return shell(g, hex)
 }
 
 function uvScale(g: THREE.BufferGeometry, s: number): THREE.BufferGeometry {
@@ -291,6 +322,30 @@ function makeGrimeTexture(rng: ViewRng, size = 256): THREE.Texture | null {
   return tex
 }
 
+/**
+ * 천장 형광등 — 지역이 lamp 색을 갖고 있을 때만 만든다.
+ *   백룸의 정체는 노란 벽지가 아니라 **꺼지지 않는 빛**이다. 도망칠 어둠이 없다는 것.
+ *   그래서 발광은 재질(emissive)이 아니라 별도 메시로 둔다 — 안개도 톤매핑도 타지
+ *   않아야 "너무 밝은 형광등" 의 그 납작함이 나온다.
+ */
+function buildLamps(biome: Biome, variant: number): THREE.BufferGeometry {
+  if (biome.lamp === 0) return new THREE.BufferGeometry()
+  const parts: THREE.BufferGeometry[] = []
+  const H = SEG_LEN / 2
+  // 세그먼트당 등 두 줄. variant 마다 한 칸씩 어긋나게 두어 반복이 덜 보이게 한다
+  const zs = variant % 2 === 0 ? [-H * 0.5, H * 0.5] : [-H * 0.72, H * 0.18]
+  for (const z of zs) {
+    // 등갓 (아래를 보는 면 하나면 충분하다 — 위는 절대 안 보인다)
+    const g = new THREE.PlaneGeometry(0.86, 1.15)
+    g.rotateX(Math.PI / 2)
+    g.translate(0, CH - 0.02, z)
+    parts.push(g)
+  }
+  const merged = mergeGeometries(parts)
+  for (const g of parts) g.dispose()
+  return merged ?? new THREE.BufferGeometry()
+}
+
 export class CorridorStreamer {
   private readonly scene: THREE.Scene
   private readonly group = new THREE.Group()
@@ -298,9 +353,14 @@ export class CorridorStreamer {
   private readonly tex: THREE.Texture | null
 
   private readonly segs: THREE.Mesh[] = []
+  /** 발광 메시 — 지역이 천장등을 쓸 때만 채워진다 (백룸의 형광등) */
+  private readonly lamps: THREE.Mesh[] = []
+  private readonly lampMat: THREE.MeshBasicMaterial
   private readonly slot: number[] = []
   private variants: THREE.BufferGeometry[] = []
+  private lampVariants: THREE.BufferGeometry[] = []
   private kind: CorridorKind = 'corridor'
+  private biome: Biome = DEFAULT_BIOME
   private seed: number
   private hint: string | null = null
 
@@ -327,6 +387,11 @@ export class CorridorStreamer {
     })
     scene.add(this.group)
 
+    this.lampMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      toneMapped: false,
+      fog: false,
+    })
     for (let i = 0; i < SEG_COUNT; i++) {
       const m = new THREE.Mesh(new THREE.BufferGeometry(), this.mat)
       m.frustumCulled = true
@@ -334,9 +399,16 @@ export class CorridorStreamer {
       this.segs.push(m)
       this.slot.push(-99999)
       this.group.add(m)
+
+      const l = new THREE.Mesh(new THREE.BufferGeometry(), this.lampMat)
+      l.frustumCulled = true
+      l.matrixAutoUpdate = false
+      l.visible = false
+      this.lamps.push(l)
+      this.group.add(l)
     }
     this.buildDoors()
-    this.rebuild(seed, 'corridor')
+    this.rebuild(seed, 'corridor', DEFAULT_BIOME)
   }
 
   // -------------------------------------------------------------------------
@@ -353,14 +425,24 @@ export class CorridorStreamer {
     this.hint = archetypeId
   }
 
-  rebuild(seed: number, kind: CorridorKind): void {
+  rebuild(seed: number, kind: CorridorKind, biome: Biome = this.biome): void {
     this.seed = seed
     this.kind = kind
+    this.biome = biome
+    // 조립 헬퍼가 읽는 팔레트를 먼저 세운다 (모듈 상단 activeBiome 주석 참고)
+    activeBiome = biome
     for (const g of this.variants) g.dispose()
+    for (const g of this.lampVariants) g.dispose()
     this.variants = []
+    this.lampVariants = []
     for (let v = 0; v < VARIANTS; v++) {
       this.variants.push(this.buildSegment(makeViewRng((seed ^ 0x1000193) + v * 7919), v))
+      this.lampVariants.push(buildLamps(biome, v))
     }
+    this.lampMat.color.setHex(biome.lamp === 0 ? 0xffffff : biome.lamp)
+    const on = biome.lamp !== 0
+    for (const l of this.lamps) l.visible = on
+    // 문틈 빛도 지역을 따른다 — 밝은 지역에서는 문이 '빛나는 틈' 이 아니다
     for (let i = 0; i < SEG_COUNT; i++) this.slot[i] = -99999
     this.update(0, 0)
   }
@@ -371,12 +453,13 @@ export class CorridorStreamer {
     const H = SEG_LEN / 2
 
     // --- 기본 껍데기 ---
-    g.push(bx(HW * 2, 0.12, SEG_LEN, 0, -0.06, 0, 0x3c3f42, 2.2))          // 바닥
-    g.push(bx(HW * 2, 0.12, SEG_LEN, 0, CH + 0.06, 0, 0x26282b, 2.0))      // 천장
-    g.push(bx(0.16, CH, SEG_LEN, -HW - 0.08, CH / 2, 0, 0x4a483f, 2.4))    // 좌벽
-    g.push(bx(0.16, CH, SEG_LEN, HW + 0.08, CH / 2, 0, 0x4a483f, 2.4))     // 우벽
-    g.push(bx(0.05, 0.26, SEG_LEN, -HW + 0.02, 0.13, 0, 0x33322c, 1.4))
-    g.push(bx(0.05, 0.26, SEG_LEN, HW - 0.02, 0.13, 0, 0x33322c, 1.4))
+    const P = activeBiome.shell
+    g.push(bxs(HW * 2, 0.12, SEG_LEN, 0, -0.06, 0, P.floor, 2.2))          // 바닥
+    g.push(bxs(HW * 2, 0.12, SEG_LEN, 0, CH + 0.06, 0, P.ceil, 2.0))       // 천장
+    g.push(bxs(0.16, CH, SEG_LEN, -HW - 0.08, CH / 2, 0, P.wall, 2.4))     // 좌벽
+    g.push(bxs(0.16, CH, SEG_LEN, HW + 0.08, CH / 2, 0, P.wall, 2.4))      // 우벽
+    g.push(bxs(0.05, 0.26, SEG_LEN, -HW + 0.02, 0.13, 0, P.trim, 1.4))
+    g.push(bxs(0.05, 0.26, SEG_LEN, HW - 0.02, 0.13, 0, P.trim, 1.4))
 
     // --- 종류별 소품 ---
     //   전부 KEEP(±0.86m) 밖, 또는 바닥(2cm)·머리 위(HEAD)에만 놓는다.
@@ -633,18 +716,27 @@ export class CorridorStreamer {
       if (this.slot[j] === s) continue
       this.slot[j] = s
       const mesh = this.segs[j]!
-      const v = this.variants[((s % VARIANTS) + VARIANTS) % VARIANTS]
+      const vi = ((s % VARIANTS) + VARIANTS) % VARIANTS
+      const v = this.variants[vi]
       if (v) mesh.geometry = v
       mesh.position.set(0, 0, -s * SEG_LEN)
       mesh.updateMatrix()
+
+      const lamp = this.lamps[j]!
+      const lv = this.lampVariants[vi]
+      if (lv) lamp.geometry = lv
+      lamp.position.copy(mesh.position)
+      lamp.updateMatrix()
     }
     // 문틈 빛 깜빡임 (결정론적 사인 합성)
     if (this.doorGroup.visible) {
       this.doorFlickT += dt
       const f = 0.82 + Math.sin(this.doorFlickT * 6.1) * 0.06 + Math.sin(this.doorFlickT * 13.7) * 0.04
+      // 밝은 지역에서는 문틈 빛이 정보가 아니다 — 주변이 이미 밝기 때문이다
+      const gl = this.biome.doorGlow
       for (let i = 0; i < this.seamMat.length; i++) {
-        this.seamMat[i]!.opacity = f
-        this.glowMat[i]!.opacity = 0.10 + (f - 0.8) * 0.5 + 0.06
+        this.seamMat[i]!.opacity = Math.min(1, f * gl)
+        this.glowMat[i]!.opacity = Math.min(1, (0.10 + (f - 0.8) * 0.5 + 0.06) * gl)
       }
     }
   }
