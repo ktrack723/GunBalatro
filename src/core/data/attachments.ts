@@ -17,6 +17,7 @@ function proc(c: FireCtx): void {
   c.triggered.push(c.self)
 }
 
+
 function getVar(s: CombatState, key: string): number {
   const v = s.vars[key]
   return typeof v === 'number' ? v : 0
@@ -42,6 +43,24 @@ function supply(s: CombatState, n: number): void {
     const id = pool[s.rng.int(pool.length)]
     s.specials[id] = (s.specials[id] ?? 0) + 1
   }
+}
+
+/**
+ * 상한이 걸린 보급 — **전투당 총 몇 발인지**를 센다.
+ *
+ * 예전에는 카운터가 '몇 번째 사격인가' 를 셌다(k >= max 면 중단). 그래서 눈금이
+ * start 1 · perMag 4 · max 4 일 때 실제 공급은 1 + 4×4 = **17발/전투** 이었는데
+ * 툴팁은 "전투당 최대 4발" 이라고 적혀 있었다. 실측에서 런 끝 가방에 47발이
+ * 남아 있던 원인이 이것이다 — 소모품이 소모품이 아니게 된다.
+ *
+ * 세는 대상을 발수로 바꾸면 눈금이 곧 툴팁이고, 툴팁이 곧 실제다.
+ */
+function supplyCapped(s: CombatState, key: string, n: number, cap: number): void {
+  const given = getVar(s, key)
+  const k = Math.min(n, Math.max(0, cap - given))
+  if (k <= 0) return
+  s.vars[key] = given + k
+  supply(s, k)
 }
 
 const isSpecial = (c: FireCtx): boolean => c.round.special !== null
@@ -344,9 +363,11 @@ export const ATTACHMENTS: Attachment[] = [
     // '길게 끄는 전투에서는 결국 값을 낸다' 는 성격만 남긴다.
     text: '전투의 처음 ' + n(TA.op_quartermaster.mags) + '번 사격은 첫 특수탄이 소모되지 않는다',
     hooks: {
+      // ★ 매 사격마다 **다시 정한다**. 예전에는 한도를 넘으면 그냥 return 했는데,
+      //   플래그가 이전 사격에서 켜진 채 남아 전투 내내 무제한이 됐다 — 눈금이
+      //   6이든 2든 아무 차이가 없었다는 뜻이다. 끄는 것도 이 훅의 일이다.
       onMagStart: (c) => {
-        if (c.s.magsFired >= TA.op_quartermaster.mags) return
-        c.s.flags['freeFirstSpecial'] = true
+        c.s.flags['freeFirstSpecial'] = c.s.magsFired < TA.op_quartermaster.mags
       },
     },
   },
@@ -396,13 +417,18 @@ export const ATTACHMENTS: Attachment[] = [
     name: '황동 부적',
     slot: 'stock',
     rarity: 'common',
-    // +6 은 커먼인데 리프트 +9.1%(n=110). 특수탄 값이 오른 만큼 탄피 값도 올랐다. +4.
-    text: '발사할 때마다 탄피 ' + sg(TA.st_charm.brass),
+    // **발당이 아니라 사격당**이다.
+    //   탄피가 한 자릿수 화폐가 되면서 발당 +4 는 한 전투에 40 을 뱉었다 — 전투
+    //   보상이 3인데 부적 하나가 그 열세 배를 찍는다. 실측 최대 잔액 693.
+    //   경제 카드가 경제를 대체해 버리면 상점의 모든 값이 무의미해진다.
+    //   사격당으로 옮기면 "쏠수록 번다" 는 성격은 그대로고 규모만 화폐에 맞는다.
+    text: '사격을 마칠 때마다 탄피 ' + sg(TA.st_charm.brass),
     hooks: {
-      onAfterShot: (c) => {
+      onMagEnd: (c) => {
         if (c.s.dryRun) return
         c.s.loadout.brass += TA.st_charm.brass
-        proc(c)
+        // 랙 번쩍임(proc)은 발사 스코프의 연출이라 여기서는 부르지 않는다 —
+        // 사격이 끝난 뒤에 카드가 번쩍이면 무엇 때문인지 읽히지 않는다.
       },
     },
   },
@@ -465,12 +491,12 @@ export const ATTACHMENTS: Attachment[] = [
     // 상한 3 이어도 리프트 +55%(n=40) — 런당 60발 넘게 공급했다. 사격 보급은 2발까지.
     text: '전투 시작 시 무작위 특수탄 ' + n(TA.st_bandolier.start) + '발 · 사격을 시작할 때마다 ' + n(TA.st_bandolier.perMag) + '발 보급 (전투당 최대 ' + n(TA.st_bandolier.max) + '발)',
     hooks: {
-      onCombatStart: (c) => { c.s.vars[c.self] = 0; supply(c.s, TA.st_bandolier.start) },
+      onCombatStart: (c) => {
+        c.s.vars[c.self] = 0
+        supplyCapped(c.s, c.self, TA.st_bandolier.start, TA.st_bandolier.max)
+      },
       onMagStart: (c) => {
-        const k = getVar(c.s, c.self)
-        if (k >= TA.st_bandolier.max) return
-        c.s.vars[c.self] = k + 1
-        supply(c.s, TA.st_bandolier.perMag)
+        supplyCapped(c.s, c.self, TA.st_bandolier.perMag, TA.st_bandolier.max)
       },
     },
   },

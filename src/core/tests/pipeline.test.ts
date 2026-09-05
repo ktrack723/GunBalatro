@@ -12,7 +12,9 @@ import { SPECIALS, SPECIAL_BY_ID } from '../data/specials'
 import { ARCHETYPES, PASSIVES, baseHp, makeEnemy } from '../data/enemies'
 import { basicRound, fire, makeRound, previewDamage, settleSpecials, startCombat } from '../combat'
 import { computeCap } from '../pipeline'
-import { advanceNode, currentNode, enterDoor, newRun, rollDoors } from '../run'
+import { advanceNode, armoryStock, currentNode, enterDoor, newRun, reliquaryStock, rollDoors } from '../run'
+import { PRICES, combatBrass } from '../economy'
+import { TA } from '../data/tuning'
 import {
   BOSSES,
   FINAL_SECTOR,
@@ -575,5 +577,93 @@ describe('지역 보스 배치', () => {
     }
     expect(seen).toEqual(BOSSES.map((b) => b.id))
     expect(run.status).toBe('won')
+  })
+})
+
+// ===========================================================================
+// 소모품 회계
+//   "탄창에 넣었는데 안 쏜 탄" 이 사라지면 계획 자체가 손해가 된다 —
+//   플레이어는 넉넉히 넣어 두고 상황을 보는 것이 아니라, 아깝지 않을 만큼만
+//   넣게 된다. 그건 이 게임이 묻고자 하는 질문(무엇을 어떤 순서로)이 아니다.
+// ===========================================================================
+describe('안 쏜 탄', () => {
+  it('적이 먼저 죽으면 남은 계획의 특수탄은 재고에 그대로 남는다', () => {
+    // HP 1 짜리 적 — 첫 발에 죽는다. 계획에는 철갑탄 세 발이 들어 있다.
+    const l = loadout([], { sp_ap: 3 })
+    const s = startCombat(l, dummy(1), makeRng(9))
+    fire(s, [makeRound('sp_ap'), makeRound('sp_ap'), makeRound('sp_ap')])
+    expect(s.outcome).toBe('win')
+    expect(s.shotsFired).toBe(1)
+    expect(s.specials['sp_ap']).toBe(2)
+    // 전투 밖으로도 그대로 나간다
+    settleSpecials(l, s)
+    expect(l.specials['sp_ap']).toBe(2)
+  })
+
+  it('쏜 만큼만 정확히 빠진다', () => {
+    const l = loadout([], { sp_ap: 4, sp_incendiary: 2 })
+    const s = startCombat(l, dummy(), makeRng(9))
+    fire(s, [makeRound('sp_ap'), basicRound(), makeRound('sp_incendiary')])
+    expect(s.specials['sp_ap']).toBe(3)
+    expect(s.specials['sp_incendiary']).toBe(1)
+  })
+
+  it('보유하지 않은 특수탄은 계획에 넣어도 발사되지 않는다 (재고가 음수로 가지 않는다)', () => {
+    const l = loadout([], { sp_ap: 1 })
+    const s = startCombat(l, dummy(), makeRng(9))
+    fire(s, [makeRound('sp_ap'), makeRound('sp_ap'), makeRound('sp_ap')])
+    expect(s.shotsFired).toBe(1)
+    expect(s.specials['sp_ap']).toBe(0)
+  })
+})
+
+describe('경제 규모', () => {
+  it('탄피는 한 자릿수 화폐다 — 어떤 값도 두 자릿수 후반을 넘지 않는다', () => {
+    for (const r of ['common', 'uncommon', 'rare', 'relic'] as const) {
+      expect(PRICES.attachment[r]).toBeLessThanOrEqual(30)
+      expect(PRICES.attachment[r]).toBeGreaterThan(0)
+    }
+    for (const p of PRICES.rail) expect(p).toBeLessThanOrEqual(30)
+    for (const sp of SPECIALS) expect(sp.price).toBeLessThanOrEqual(15)
+  })
+
+  it('등급이 올라가면 값도 올라간다 (사다리가 뒤집히지 않는다)', () => {
+    const p = PRICES.attachment
+    expect(p.common).toBeLessThan(p.uncommon)
+    expect(p.uncommon).toBeLessThan(p.rare)
+    expect(p.rare).toBeLessThan(p.relic)
+  })
+
+  it('전투 보상 탄피도 한 자릿수다', () => {
+    const l = loadout()
+    const s = startCombat(l, dummy(), makeRng(3))
+    // 최상의 경우: 거리를 하나도 쓰지 않고 위험도 3 을 잡았다
+    s.distance = s.enemy.startDist
+    s.peakHeat = 60
+    expect(combatBrass(s, 3)).toBeLessThanOrEqual(9)
+  })
+})
+
+describe('상점 진열', () => {
+  it('정비소는 네 칸, 성소는 세 칸을 넘지 않는다', () => {
+    const run = newRun(11)
+    for (let i = 0; i < 40 && run.status === 'alive'; i += 1) {
+      const node = currentNode(run)
+      if (node === 'armory') expect(armoryStock(run).length).toBeLessThanOrEqual(4)
+      if (node === 'reliquary') expect(reliquaryStock(run).length).toBeLessThanOrEqual(3)
+      advanceNode(run)
+    }
+  })
+})
+
+describe('특수탄 보급 상한', () => {
+  it('탄띠 걸이는 전투당 눈금만큼만 보급한다 (툴팁이 곧 실제다)', () => {
+    const l = loadout(['st_bandolier'], { sp_ap: 1 })
+    // 사격을 여러 번 이어 해도 총 보급량은 max 를 넘지 않는다
+    const s = startCombat(l, dummy(), makeRng(4))
+    const before = 1
+    for (let i = 0; i < 5; i += 1) fire(s, [basicRound(), basicRound()])
+    const bag = Object.values(s.specials).reduce((a, b) => a + b, 0)
+    expect(bag - before).toBeLessThanOrEqual(TA.st_bandolier.max)
   })
 })

@@ -178,7 +178,14 @@ export function expectedRewardValue(bands: Record<Rarity, Band>): Record<Threat,
  */
 export const PRICE_ALPHA = 0.15
 
-export function priceLadder(unit: number, q = 0.5): Record<Rarity, number> {
+/**
+ * 사다리의 바닥값 — **일반 특수탄 한 발**의 값이다.
+ *   탄피는 한 자릿수 화폐라(core/economy.ts) 여기도 그 단위로 센다.
+ *   예전 16 은 탄 값이 18~111 이던 시절의 바닥이었다.
+ */
+export const PRICE_UNIT = 2
+
+export function priceLadder(unit: number = PRICE_UNIT, q = 0.5): Record<Rarity, number> {
   const mix = rarityMix(q)
   const base = mix.common
   const out = {} as Record<Rarity, number>
@@ -234,7 +241,7 @@ export function report(q = 0.5): string {
   L.push('')
   L.push('④ 가격 사다리 — 값/가격이 등급마다 같아야 정비소가 저울이 된다')
   L.push('─'.repeat(76))
-  const pl = priceLadder(16, q)
+  const pl = priceLadder(PRICE_UNIT, q)
   for (const r of RARITIES) {
     L.push('   ' + pad(r, 10) + '권장가 ' + padS(String(Math.round(pl[r])), 5) + '   (밴드중앙 ' + padS(f(ROUND_BANDS[r].mid), 6) + ' → 값/가격 ' + f(ROUND_BANDS[r].mid / pl[r] * 100) + ')')
   }

@@ -18,25 +18,26 @@
 /**
  * 특수탄 눈금.
  *   dmg/heat 은 STEP1·STEP2 의 기본값, 나머지는 훅이 얹는 몫이다.
- *   price 는 정비소 1발 값 — 가치 분석기가 밴드와 함께 맞춘다.
+ *   price 는 정비소 1발 값 — 가치 분석기가 밴드와 함께 맞춘다
+ *   (sim/bands.ts 의 PRICE_UNIT 사다리. 탄피는 한 자릿수 화폐다).
  */
 export const TR = {
-  sp_incendiary: { dmg: 1, heat: 1.1, price: 24 },
-  sp_ap: { dmg: 24, heat: 0.05, price: 18 },
-  sp_shock: { dmg: 14, heat: 0.4, price: 29, knock: 1.5, cap: 3 },
-  sp_adhesive: { dmg: 14, heat: 0.4, price: 29, bonus: 23 },
-  sp_thermite: { dmg: 2, heat: 2.2, price: 38 },
-  sp_marker: { dmg: 16, heat: 0.4, price: 30, vuln: 0.28 },
-  sp_chill: { dmg: 69, heat: 0.3, price: 30, slow: 2, cap: 2 },
-  sp_cryo: { dmg: 18, heat: 0.15, price: 30, thr: 18, mul: 4.1 },
-  sp_purge: { dmg: 126, heat: 0, price: 29, mul: 20 },
-  sp_sanctified: { dmg: 26, mult: 6.1, heat: 0.6, price: 55 },
-  sp_cascade: { dmg: 4, mult: 1.65, heat: 1.5, price: 53 },
-  sp_breach: { dmg: 147, heat: 0.05, price: 51 },
-  sp_solitary: { dmg: 30, heat: 0.3, price: 51, bonus: 106 },
-  sp_firststrike: { dmg: 40, heat: 0.1, price: 51, thr: 6, bonus: 111 },
-  sp_singularity: { dmg: 20, heat: 0, price: 99, mul: 1.5 },
-  sp_judgment: { dmg: 124, heat: 0.5, price: 111, mul: 3 },
+  sp_incendiary: { dmg: 1, heat: 1.1, price: 2 },
+  sp_ap: { dmg: 24, heat: 0.05, price: 2 },
+  sp_shock: { dmg: 14, heat: 0.4, price: 3, knock: 1.5, cap: 3 },
+  sp_adhesive: { dmg: 14, heat: 0.4, price: 3, bonus: 23 },
+  sp_thermite: { dmg: 2, heat: 2.2, price: 4 },
+  sp_marker: { dmg: 16, heat: 0.4, price: 3, vuln: 0.28 },
+  sp_chill: { dmg: 69, heat: 0.3, price: 3, slow: 2, cap: 2 },
+  sp_cryo: { dmg: 18, heat: 0.15, price: 3, thr: 18, mul: 4.1 },
+  sp_purge: { dmg: 126, heat: 0, price: 3, mul: 20 },
+  sp_sanctified: { dmg: 26, mult: 6.1, heat: 0.6, price: 6 },
+  sp_cascade: { dmg: 4, mult: 1.65, heat: 1.5, price: 5 },
+  sp_breach: { dmg: 147, heat: 0.05, price: 5 },
+  sp_solitary: { dmg: 30, heat: 0.3, price: 5, bonus: 106 },
+  sp_firststrike: { dmg: 40, heat: 0.1, price: 5, thr: 6, bonus: 111 },
+  sp_singularity: { dmg: 20, heat: 0, price: 10, mul: 1.5 },
+  sp_judgment: { dmg: 124, heat: 0.5, price: 11, mul: 3 },
 }
 
 /**
@@ -80,7 +81,7 @@ export const TA = {
   op_poverty: { heat: 6.6 },
   op_trinity: { heat: 1, need: 3 },
   op_pact: { dmg: 157, thr: 4.1 },
-  op_quartermaster: { mags: 6 },
+  op_quartermaster: { mags: 2 },
   op_soulmark: { heat: 5.8, step: 0.6 },
   op_vigil: { step: 279, max: 5 },
   op_frostvault: { step: 2.3, thr: 6 },
@@ -90,12 +91,12 @@ export const TA = {
   // --- 개머리판 -----------------------------------------------------------
   st_rangefinder: { fireCost: -1 },
   st_fixed: { startDist: 8 },
-  st_charm: { brass: 4 },
+  st_charm: { brass: 2 },
   st_buffer: { startDist: 10, fireCost: -1 },
   st_penance: { dmg: 24, startDist: -4 },
   st_reliquary: { railSlots: 1, startDist: 16 },
   st_stride: { enemySpeed: -3, startDist: -2 },
-  st_bandolier: { start: 1, perMag: 4, max: 4 },
+  st_bandolier: { start: 1, perMag: 1, max: 2 },
   st_glacier: { dmg: 58, thr: 6, carry: -0.5 },
 
   // --- 탄창 ---------------------------------------------------------------

@@ -544,7 +544,7 @@ export function threatHpMul(threat: Threat, sector: number): number {
 export function threatSpeedAdd(threat: Threat, sector: number): number {
   return Math.round(THREAT_SPEED_ADD[threat] * threatRamp(sector))
 }
-export const THREAT_BRASS: Record<Threat, number> = { 1: 0, 2: 15, 3: 35 }
+export const THREAT_BRASS: Record<Threat, number> = { 1: 0, 2: 1, 3: 2 }
 /** [common, uncommon, rare, relic] */
 export const THREAT_RARITY_W: Record<Threat, [number, number, number, number]> = {
   1: [70, 26, 4, 0],

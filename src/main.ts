@@ -10,6 +10,8 @@ import { initSettings, loadSettings } from './ui/settings'
 import { mountToasts, toast } from './ui/toast'
 import { showCredits } from './ui/screens/CreditsScreen'
 import { BOSSES } from './core/data/regions'
+import { showArmory } from './ui/screens/ArmoryScreen'
+import { armoryStock, newRun, reliquaryStock } from './core/run'
 
 // ---------------------------------------------------------------------------
 // DOM 확보
@@ -212,7 +214,26 @@ window.addEventListener('pagehide', () => {
 
 // --- 개발용 핸들 (#dev 일 때만) ---------------------------------------------
 if (location.hash.includes('dev')) {
-  ;(window as unknown as Record<string, unknown>)['__gb'] = { renderer, game, audio, scene: game.devScene, credits: showCredits, bosses: BOSSES }
+  // 화면을 실기에서 눈으로 확인하기 위한 핸들. 게임 코드는 이 중 아무것도 쓰지 않는다.
+  ;(window as unknown as Record<string, unknown>)['__gb'] = {
+    renderer,
+    game,
+    audio,
+    scene: game.devScene,
+    credits: showCredits,
+    bosses: BOSSES,
+    /** 상점을 바로 띄운다 — 진열 칸 수와 가격을 보기 위한 것 */
+    shop: (host: HTMLElement, kind: 'armory' | 'reliquary' = 'armory', seed = 7) => {
+      const run = newRun(seed)
+      run.loadout.brass = 12
+      return showArmory(
+        host,
+        run,
+        kind === 'armory' ? '정비소' : '성소',
+        kind === 'armory' ? armoryStock(run) : reliquaryStock(run),
+      )
+    },
+  }
 }
 
 // --- 시작 -------------------------------------------------------------------

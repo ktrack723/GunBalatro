@@ -86,6 +86,12 @@ export type TraceLine =
 export interface Telemetry {
   trigger: Record<string, number>
   specialShots: Record<string, number>
+  /** 전투에서 **실제로 재고에서 빠진** 특수탄 수 (발사 수와 다르다 — 미소모 재발사) */
+  specialsUsed: number[]
+  /** 그 전투가 끝난 뒤 가방에 남은 특수탄 수 */
+  specialsBag: number[]
+  /** 쐈는데 재고에서 빠지지 않은 횟수 (미소모 재발사·무료 1발) */
+  specialsFree: number
   /** 특수탄별 총 데미지 (발당 평균 = specialDmg / specialShots). 'basic' 은 기본탄 */
   specialDmg: Record<string, number>
   equipped: Record<string, number>
@@ -107,6 +113,7 @@ export interface Telemetry {
 export function emptyTelemetry(): Telemetry {
   return {
     trigger: {}, specialShots: {}, specialDmg: {}, equipped: {},
+    specialsUsed: [], specialsBag: [], specialsFree: 0,
     magsPerCombat: [], heatAtMagEnd: [], winDistFrac: [],
     deathHpFrac: [], magsNeeded: [], actionsAvailable: [],
   }
@@ -250,7 +257,7 @@ function probeOnce(run: RunState, caseIndex: number): Probe {
   const specialsLeft = countSpecials(s.specials) - specialsBefore
   const brassGain = run.loadout.brass - brassBefore
   run.loadout.brass = brassBefore
-  const perMag = raw + (specialsLeft * raw * 0.10 + brassGain * raw * 0.004) / Math.max(1, mags)
+  const perMag = raw + (specialsLeft * raw * 0.10 + brassGain * raw * 0.04) / Math.max(1, mags)
   return { perMag: Math.max(1, perMag), actions, maxHp: probe.maxHp }
 }
 
@@ -313,7 +320,7 @@ function takeReward(run: RunState, threat: Threat, trace?: TraceLine[]): void {
 function purchaseValue(run: RunState, e: ArmoryEntry, before: number): number {
   if (e.price > run.loadout.brass) return -1
   if (e.kind === 'rail') return run.sector <= 5 ? (before * 0.34) / e.price : -1
-  if (e.kind === 'heal') return run.loadout.brass > 200 ? 0.02 : -1
+  if (e.kind === 'heal') return run.loadout.brass > 20 ? 0.02 : -1
 
   const snap = snapshot(run)
   buy(run, e)
@@ -328,16 +335,26 @@ function purchaseValue(run: RunState, e: ArmoryEntry, before: number): number {
   return (after - before + bonus) / paid
 }
 
+/**
+ * 상점 한 번.
+ *
+ * ★ 진열은 **들어갈 때 한 번만** 굴린다. 예전에는 구매마다 armoryStock 을 다시
+ *   불렀는데, 이미 장착한 것이 제외 목록에 들어가면서 매번 **다른 물건**이 떴다 —
+ *   봇이 한 런에 33~57번을 사고 있었고 그건 실기에서 절대 일어날 수 없는 일이다
+ *   (App 은 showArmory 에 진열을 한 번 넘긴다). 측정이 게임과 다르면 그 측정으로
+ *   맞춘 밸런스는 게임의 밸런스가 아니다.
+ */
 function visitShop(run: RunState, kind: 'armory' | 'reliquary', trace?: TraceLine[]): void {
   const failed = new Set<string>()
+  const stock = kind === 'armory' ? armoryStock(run) : reliquaryStock(run)
+  const bought = new Set<string>()
   for (let i = 0; i < MAX_PURCHASES; i += 1) {
-    const stock = kind === 'armory' ? armoryStock(run) : reliquaryStock(run)
     const before = firepower(run)
     let best: ArmoryEntry | null = null
     let bestV = 0
     for (const e of stock) {
       const key = e.kind + '/' + e.label
-      if (failed.has(key)) continue
+      if (failed.has(key) || bought.has(key)) continue
       const v = purchaseValue(run, e, before)
       if (v > bestV) {
         bestV = v
@@ -347,8 +364,13 @@ function visitShop(run: RunState, kind: 'armory' | 'reliquary', trace?: TraceLin
     if (best === null) return
     const brassBefore = run.loadout.brass
     buy(run, best)
-    if (run.loadout.brass === brassBefore) failed.add(best.kind + '/' + best.label)
-    else trace?.push({ k: 'buy', label: best.label, price: best.price, brassLeft: run.loadout.brass })
+    const key = best.kind + '/' + best.label
+    if (run.loadout.brass === brassBefore) failed.add(key)
+    else {
+      // 진열대에서 사라진다 — 같은 칸을 두 번 사지 않는다
+      bought.add(key)
+      trace?.push({ k: 'buy', label: best.label, price: best.price, brassLeft: run.loadout.brass })
+    }
   }
 }
 
@@ -431,6 +453,7 @@ export function simulateRun(
       const staged = { ...enemy, startDist: Math.max(4, enemy.startDist - stakePenalty) }
       const rng = makeRng(run.rngState).fork(run.sector * 733 + run.nodeIndex * 17 + 3)
       const s = startCombat(run.loadout, staged, rng, mods)
+      const bagBefore = countSpecials(s.specials)
       if (tel !== undefined) {
         for (const a of s.attachments) tel.equipped[a.id] = (tel.equipped[a.id] ?? 0) + 1
         const perMag = Math.max(1, estimateMagDamage(s, skill))
@@ -478,6 +501,8 @@ export function simulateRun(
               tel.specialShots[spId] = (tel.specialShots[spId] ?? 0) + 1
               tel.specialDmg[spId] = (tel.specialDmg[spId] ?? 0) + ev.damage
             }
+          } else if (ev.t === 'notConsumed') {
+            if (tel !== undefined) tel.specialsFree += 1
           } else if (ev.t === 'magEnd') {
             carried = ev.heatCarried
             damage = ev.totalDamage
@@ -502,7 +527,12 @@ export function simulateRun(
       run.stats.shotsFired += s.shotsFired
       run.stats.totalDamage += s.totalDamage
       if (s.peakHeat > peak) peak = s.peakHeat
+      // 소비는 **재고 차이**로만 셀 수 있다 — 발사 수는 미소모 재발사를 포함하므로
+      // 소비량과 다르다. 둘을 섞어 추정하면 "공급 44 · 발사 39 · 남음 36" 같은
+      // 앞뒤가 안 맞는 표가 나온다 (실제로 그렇게 헤맸다).
+      tel?.specialsUsed.push(bagBefore - countSpecials(s.specials))
       settleSpecials(run.loadout, s)
+      tel?.specialsBag.push(countSpecials(run.loadout.specials))
       tel?.magsPerCombat.push(s.magsFired)
 
       if (!res.win) {

@@ -296,8 +296,18 @@ function equippedIds(run: RunState): Set<string> {
  * 예전(3/2/1)은 '고르면' 받는 값이었다. 이제는 **매 전투 무조건** 받으므로 그대로 두면
  * 공급이 두 배가 된다. 2/1/1 로 내린다 — 총량은 비슷하되 받는 리듬이 규칙적이다.
  */
-function specialCountFor(rarity: Rarity): number {
-  if (rarity === 'common') return 2
+/**
+ * 보상방이 주는 특수탄 묶음 크기 — **언제나 한 발**.
+ *
+ * 예전에는 일반이 2발이었다. 전투마다 1.4발이 들어오는데 실제 소비는 전투당
+ * 2.4발이라 얼추 맞아 보였지만, 정비소가 3발 묶음을 얹으면서 런 끝에 **52발**이
+ * 남았다(실측). 소모품이 남아돌면 그건 소모품이 아니다 — "지금 이걸 쓸까 아낄까"
+ * 가 사라지고 매 탄창을 특수탄으로 채우게 된다.
+ *
+ * 한 발씩이면 런 전체 공급이 소비를 밑돌아, 모자란 만큼을 정비소에서 살지
+ * 기본탄으로 버틸지가 실제 선택이 된다.
+ */
+function specialCountFor(_rarity: Rarity): number {
   return 1
 }
 
@@ -404,19 +414,32 @@ function attachmentEntry(run: RunState, a: Attachment): ArmoryEntry {
   }
 }
 
+/**
+ * 정비소 진열 — **네 칸**.
+ *
+ * 예전에는 일곱 칸이었다(일반탄 2 · 희귀탄 1 · 부착물 2 · 레일 · 보급). 그런데
+ * 칸이 일곱이면 고르는 것이 아니라 **훑는 것**이 된다 — 실측에서 봇은 한 런에
+ * 33번을 샀다. 그건 상점이 아니라 자판기다.
+ *
+ * 카탈로그를 줄인 게 아니라 **한 번에 보이는 수**를 줄였다. 물건은 그대로 있고,
+ * 다음 정비소에서 다른 넷이 나온다. 네 칸이면 한눈에 다 읽히고, 탄피가 한
+ * 자릿수라 "이번엔 이것 하나" 가 실제로 강제된다.
+ *
+ * 마지막 칸은 레일이 남아 있으면 레일, 다 열었으면 응급 보급이다 — 둘 다
+ * "화력이 아닌 것" 자리라 겹쳐 놓아도 성격이 흐려지지 않는다.
+ */
+const ARMORY_SLOTS = 4
+
 export function armoryStock(run: RunState): ArmoryEntry[] {
   const r = makeRng(run.rngState ^ (run.sector * 7919 + run.nodeIndex * 131))
   const out: ArmoryEntry[] = []
   const taken = equippedIds(run)
 
-  const commons = SPECIALS.filter((s) => s.rarity === 'common' || s.rarity === 'uncommon')
-  for (let i = 0; i < 2; i += 1) {
-    const def = r.pick(commons)
-    out.push(specialEntry(run, def, PRICES.specialBundle))
-  }
-  const rare = SPECIALS.filter((s) => s.rarity === 'rare')
-  if (rare.length > 0) out.push(specialEntry(run, r.pick(rare), 1))
+  // ① 특수탄 한 종 — 묶음으로만 판다 (한 발씩 사면 계산이 끝없이 잘게 쪼개진다)
+  const ammo = SPECIALS.filter((s) => s.rarity === 'common' || s.rarity === 'uncommon')
+  if (ammo.length > 0) out.push(specialEntry(run, r.pick(ammo), PRICES.specialBundle))
 
+  // ② 부착물 둘 — 이 화면의 본론
   for (let i = 0; i < 2; i += 1) {
     const rarity: Rarity = r.next() < 0.35 ? 'rare' : 'uncommon'
     const a = pickAttachment(r, { rarity, exclude: taken })
@@ -425,28 +448,36 @@ export function armoryStock(run: RunState): ArmoryEntry[] {
     out.push(attachmentEntry(run, a))
   }
 
+  // ③ 마지막 한 칸 — 레일이 남았으면 레일, 아니면 보급
   if (run.loadout.railSlots < MAX_RAIL_SLOTS) {
     out.push({
       kind: 'rail',
-      price: shopPrice(PRICES.rail[run.loadout.railSlots] ?? 220, run.stake),
+      price: shopPrice(PRICES.rail[run.loadout.railSlots] ?? 22, run.stake),
       label: '보조 레일 확장',
       sub: '광학을 하나 더 달 수 있다 (레일 자체엔 효과 없음)',
     })
+  } else {
+    out.push({
+      kind: 'heal',
+      price: shopPrice(PRICES.heal, run.stake),
+      label: '응급 보급',
+      sub: '다음 전투 시작 거리 +10m',
+    })
   }
-  out.push({
-    kind: 'heal',
-    price: shopPrice(PRICES.heal, run.stake),
-    label: '응급 보급',
-    sub: '다음 전투 시작 거리 +10m',
-  })
-  return out
+  return out.slice(0, ARMORY_SLOTS)
 }
+
+/**
+ * 성소 진열 — **세 칸**. 여기는 값비싼 것만 나오는 자리라 더 좁힌다.
+ *   레일은 정비소에서만 판다 — 성소는 "무엇을 붙일 것인가" 만 묻는 곳이다.
+ */
+const RELIQUARY_SLOTS = 3
 
 export function reliquaryStock(run: RunState): ArmoryEntry[] {
   const r = makeRng((run.rngState ^ 0x5bf03635) + run.sector * 977)
   const out: ArmoryEntry[] = []
   const taken = equippedIds(run)
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < 2; i += 1) {
     const rarity: Rarity = r.next() < 0.25 ? 'relic' : 'rare'
     const a = pickAttachment(r, { rarity, exclude: taken })
     if (a === null) continue
@@ -455,15 +486,7 @@ export function reliquaryStock(run: RunState): ArmoryEntry[] {
   }
   const relicSp = SPECIALS.filter((s) => s.rarity === 'relic')
   if (relicSp.length > 0) out.push(specialEntry(run, r.pick(relicSp), 1))
-  if (run.loadout.railSlots < MAX_RAIL_SLOTS) {
-    out.push({
-      kind: 'rail',
-      price: shopPrice(PRICES.rail[run.loadout.railSlots] ?? 220, run.stake),
-      label: '보조 레일 확장',
-      sub: '광학을 하나 더 달 수 있다 (레일 자체엔 효과 없음)',
-    })
-  }
-  return out
+  return out.slice(0, RELIQUARY_SLOTS)
 }
 
 function isSpecialPayload(p: unknown): p is SpecialPayload {

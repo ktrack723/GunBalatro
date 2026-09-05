@@ -88,10 +88,10 @@ const CORPSE_PILE: DerelictEvent = {
   body: '통로를 반쯤 막은 시체 더미. 아직 온기가 남아 있다.',
   options: [
     {
-      label: '주머니를 뒤진다 — 탄피 +60',
+      label: '주머니를 뒤진다 — 탄피 +6',
       apply(run) {
-        run.loadout.brass += 60
-        return '시체들의 주머니에서 탄피 60개를 긁어모았다.'
+        run.loadout.brass += 6
+        return '시체들의 주머니에서 탄피 6개를 긁어모았다.'
       },
     },
     {
@@ -154,10 +154,10 @@ const CONFESSIONAL: DerelictEvent = {
       },
     },
     {
-      label: '침묵한다 — 탄피 +45',
+      label: '침묵한다 — 탄피 +5',
       apply(run) {
-        run.loadout.brass += 45
-        return '아무 말도 하지 않았다. 헌금함에서 탄피 45개를 챙겼다.'
+        run.loadout.brass += 5
+        return '아무 말도 하지 않았다. 헌금함에서 탄피 5개를 챙겼다.'
       },
     },
   ],
@@ -176,10 +176,10 @@ const BURNING_ICON: DerelictEvent = {
       },
     },
     {
-      label: '금박을 벗겨낸다 — 탄피 +40',
+      label: '금박을 벗겨낸다 — 탄피 +4',
       apply(run) {
-        run.loadout.brass += 40
-        return '성상의 금박을 벗겨 탄피 40개로 바꿨다.'
+        run.loadout.brass += 4
+        return '성상의 금박을 벗겨 탄피 4개로 바꿨다.'
       },
     },
   ],
@@ -218,8 +218,8 @@ const MIRROR_ROOM: DerelictEvent = {
       label: '거울에 손을 넣는다 — 보조 레일 +1',
       apply(run) {
         if (run.loadout.railSlots >= MAX_RAIL_SLOTS) {
-          run.loadout.brass += 70
-          return '레일은 두 칸이 끝이다. 대신 탄피 70개를 챙겼다.'
+          run.loadout.brass += 7
+          return '레일은 두 칸이 끝이다. 대신 탄피 7개를 챙겼다.'
         }
         growRails(run, 1)
         return '보조 레일 ' + run.loadout.railSlots + '번째 칸이 열렸다.'

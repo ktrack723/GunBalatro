@@ -329,9 +329,22 @@ export function specialsOfRarity(r: SpecialDef['rarity']): SpecialDef[] {
   return SPECIALS.filter((s) => s.rarity === r)
 }
 
-/** 시작 특수탄 — 적고 단순하게. 나머지는 보상/상점으로 얻는다. */
+/**
+ * 시작 특수탄 — **각 2발**.
+ *
+ * 예전에는 소이 3 · 철갑 2 였다. 합이 정확히 기본 탄창 용량(5)이라, 첫 사격이
+ * "특수탄으로 꽉 채운다" 하나로 끝났다. 그런데 이 게임의 실제 문제는
+ * **기본탄 사이 어디에 특수탄을 끼울 것인가** 다 — 첫 탄창이 전부 특수탄이면
+ * 그 문제가 한 번도 나오지 않는다. 그리고 다음 탄창부터는 재고가 0이라
+ * 배운 것을 써 볼 자리도 없다.
+ *
+ * 2 + 2 = 4 < 5 라서 첫 사격부터 기본탄이 최소 한 칸 들어간다. 배치가 곧
+ * 첫 화면의 문제가 되고, 각 2발이면 "한 발 쓰고 한 발 남긴다" 는 아껴 쓰기가
+ * 처음부터 성립한다. 소이(온도)와 철갑(피해) 이라는 두 축을 같은 수로 주는 것도
+ * 의도다 — 어느 쪽이 기본값이라는 인상을 남기지 않는다.
+ */
 export function startingSpecials(): Record<string, number> {
-  return { sp_incendiary: 3, sp_ap: 2 }
+  return { sp_incendiary: 2, sp_ap: 2 }
 }
 
 /**

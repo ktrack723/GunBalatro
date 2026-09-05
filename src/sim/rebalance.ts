@@ -595,13 +595,13 @@ function main(): void {
   // 가격은 밴드가 아니라 **측정값**에 맞춘다 — 같은 등급이어도 실제로 센 것이 비싸야
   // 정비소가 저울이 된다. 눈금은 sim/bands.ts 의 사다리(희소 프리미엄 α=0.15)다.
   const finalVals = measureAll()
-  const ladder = bands.priceLadder(16)
+  const ladder = bands.priceLadder(bands.PRICE_UNIT)
   for (const v of finalVals) {
     if (v.slot !== 'round') continue
     const k = knob(v.id, 'price')
     if (k === null) continue
     const ratio = v.value / Math.max(0.1, ROUND_BANDS[v.rarity].mid)
-    k.set(Math.max(6, Math.round(ladder[v.rarity] * ratio)))
+    k.set(Math.max(2, Math.round(ladder[v.rarity] * ratio)))
   }
   sync()
 
